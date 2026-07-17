@@ -12,7 +12,7 @@ this file, ignoring the "you are an agent" framing.
 If you are already reading this inside a local clone, use it; otherwise:
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USER/swarmvault ~/.swarmvault
+git clone https://github.com/AnmarHani/swarmvault ~/.swarmvault
 ```
 
 If the clone lives elsewhere, copy it: `cp -r <clone> ~/.swarmvault`.

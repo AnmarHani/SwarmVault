@@ -1,10 +1,8 @@
-# 🐝 SwarmVault
+# 🎛️ SwarmVault
 
-**Your AI agents forget everything. SwarmVault doesn't.**
+**Your AI agents does not synchronise. SwarmVault does.**
 
-Run 10 Claude Code agents and 10 Codex agents on the same project, in parallel, across
-weeks of sessions — and every one of them knows what all the others learned, decided,
-and built. One vault. Every agent. Zero amnesia.
+A shared knowledge vault + full software-engineering workflow for AI coding agents — run Claude Code and Codex in parallel with one memory, one plan.
 
 > 📦 Zero dependencies · 📝 Plain markdown · 🕸️ Obsidian-optional graph ·
 > 🆓 MIT
@@ -13,13 +11,13 @@ and built. One vault. Every agent. Zero amnesia.
 
 **Door 1 — let your agent do it** *(the fun one)*: paste this into Claude Code or Codex:
 
-> Read https://github.com/YOUR_GITHUB_USER/swarmvault/blob/main/INSTALL.md and
+> Read https://github.com/AnmarHani/swarmvault/blob/main/INSTALL.md and
 > integrate SwarmVault into my setup.
 
 Your agent clones it, builds your vault, wires its own hooks, and asks you the three
 questions that are actually yours to answer.
 
-**Door 2 — script:** `git clone https://github.com/YOUR_GITHUB_USER/swarmvault && cd swarmvault && ./install.sh`
+**Door 2 — script:** `git clone https://github.com/AnmarHani/swarmvault && cd swarmvault && ./install.sh`
 
 **Door 3 — manual:** copy `skills/` into `.claude/skills/`, `scripts/` anywhere, and
 follow [INSTALL.md](INSTALL.md) §3. It's all just markdown and one Python file.
@@ -61,7 +59,7 @@ flowchart LR
         A2[Claude Code #2]
         A3[Codex #1]
     end
-    V[(🐝 SwarmVault<br/>markdown vault)]
+    V[(🎛️ SwarmVault<br/>markdown vault)]
     A1 <-->|query · sync · claim| V
     A2 <-->|query · sync · claim| V
     A3 <-->|query · sync · claim| V
@@ -107,5 +105,4 @@ a security boundary.
 ## Credits & license
 
 The skills were written fresh for SwarmVault, but the techniques stand on excellent
-prior work — see **[CREDITS.md](CREDITS.md)** (obra's superpowers, Matt Pocock's skills,
-Jeffallan's collection, and more). MIT — see [LICENSE](LICENSE).
+prior work — see **[CREDITS.md](CREDITS.md)**. MIT — see [LICENSE](LICENSE).

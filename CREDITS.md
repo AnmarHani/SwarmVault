@@ -6,33 +6,28 @@ learned from these authors' work. Thank you. (Licenses recorded as found at merg
 
 ## Skill & method influences
 
-- **Jesse Vincent (obra) — [superpowers](https://github.com/obra/superpowers)**
-  *(MIT, verified 2026-07-17)* — the process backbone: systematic-debugging (evidence →
+- **Superpowers Skills — [superpowers](https://github.com/obra/superpowers)**  — the process backbone: systematic-debugging (evidence →
   hypothesis → root cause), test-driven-development, subagent-driven development &
   parallel dispatch, writing-plans/executing-plans, verification-before-completion,
   brainstorming, writing-skills (skills-are-code rigor). Shaped: swarm-spec,
   swarm-implement, swarm-debug, swarm-review, swarm-skill-forge.
 
-- **Matt Pocock — [skills](https://github.com/mattpocock/skills) /
-  [aihero.dev](https://www.aihero.dev)** *(MIT, verified 2026-07-17)* —
-  the grilling interview stance (recommendation-first, decisions-are-the-user's),
+- **Grill Me Skills — [skills](https://github.com/mattpocock/skills)** — the grilling interview stance (recommendation-first, decisions-are-the-user's),
   to-spec/to-tickets (conversation → spec → tracer-bullet tickets), two-axis code review
   (standards + spec), codebase-design (deep modules), domain-modeling,
   writing-great-skills (description-as-router). Shaped: swarm-spec, swarm-implement,
   swarm-review, swarm-design, swarm-flow, swarm-skill-forge.
 
-- **[Jeffallan](https://github.com/Jeffallan) — skills collection** *(MIT, per inline
-  metadata)* — feature-forge (EARS acceptance criteria, requirements workshops),
+- **Claude Skills — [skills collection](https://github.com/Jeffallan/claude-skills)** — feature-forge (EARS acceptance criteria, requirements workshops),
   spec-miner (reverse-engineering specs from code), architecture-designer, api-designer,
   code-reviewer, security-reviewer, the-fool (pre-mortem devil's advocate),
   debugging-wizard, test-master. Shaped: swarm-spec, swarm-design, swarm-review,
   swarm-debug.
 
-- **caveman plugin** *(author unidentified — please open an issue to be credited)* —
+- **Caveman Skill — [caveman](https://github.com/JuliusBrussee/caveman/blob/main/skills/caveman/SKILL.md)** —
   the token-compression insight behind the machine-lane compact-writing guideline.
 
-- **[euxx — claude-skills-for-copilot](https://github.com/euxx/claude-skills-for-copilot)**
-  *(MIT, portions Apache-2.0; verified 2026-07-17)* — code-simplifier: the
+- **Claude Skills for copilot — [claude-skills-for-copilot](https://github.com/euxx/claude-skills-for-copilot)** — code-simplifier: the
   simplify-before-done stance in swarm-implement and swarm-review.
 
 ## Reference works
