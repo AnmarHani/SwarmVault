@@ -46,5 +46,6 @@ taste decisions put to me (C3/C4).
 ## Influences (credited in FR-19)
 
 Laws of UX (Yablonski), roadmap.sh/design-system, Frost's Atomic Design, Figma typography
-resource, Anthropic frontend-design skill (taste stance), snyk top-UI-skills survey,
-user-supplied design principles list.
+resource, NameThatUI (namethatui.com — precise component vocabulary, added 2026-07-17),
+Anthropic frontend-design skill (taste stance), snyk top-UI-skills survey, user-supplied
+design principles list.

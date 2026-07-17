@@ -28,7 +28,11 @@ Everything as **tokens and scales**, never per-screen ad-hoc values:
 3. **Spacing & box model** — one spacing scale (e.g. 4px base), consistent
    margin/border/padding discipline, grid + auto-layout container rules.
 4. **Atomic inventory** — atoms → components → templates → pages; every screen implied by
-   an FR appears here, traced to its FR-ID.
+   an FR appears here, traced to its FR-ID. Use the *correct component names*
+   ([namethatui.com](https://namethatui.com) is the dictionary): "drawer", "segmented
+   control", "combobox" — not "that sliding panel". Precise names in specs and tickets
+   mean every agent builds the same thing; when the user describes a component vaguely,
+   resolve it to its proper name and confirm.
 5. **Responsive rules** — breakpoints, and a genuinely distinct mobile design where the
    SRS calls for mobile (not a shrunken desktop).
 6. **Motion & interaction** — states (hover/focus/active/disabled/loading/error), timing.
@@ -49,4 +53,5 @@ related things) · Doherty (feedback < 400 ms) · error prevention over error me
 
 ---
 *Influences: Laws of UX (Yablonski); Atomic Design (Frost); roadmap.sh/design-system;
-Figma typography guide; Anthropic frontend-design skill — see CREDITS.md.*
+Figma typography guide; NameThatUI (component vocabulary); Anthropic frontend-design
+skill — see CREDITS.md.*

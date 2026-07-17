@@ -39,6 +39,7 @@ learned from these authors' work. Thank you. (Licenses recorded as found at merg
 
 ISO/IEC 25010 (quality characteristics) · EARS — Easy Approach to Requirements Syntax
 (Mavin et al.) · *Laws of UX* — Jon Yablonski · *Atomic Design* — Brad Frost ·
+[NameThatUI](https://namethatui.com) — visual dictionary of UI component names ·
 [roadmap.sh/design-system](https://roadmap.sh/design-system) ·
 [refactoring.guru](https://refactoring.guru) design patterns · Michael Nygard's ADR
 format · [Conventional Commits](https://www.conventionalcommits.org) ·
