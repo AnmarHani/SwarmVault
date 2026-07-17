@@ -53,7 +53,10 @@
 ## Branch H — Brownfield SDLC adoption (added by user 2026-07-17 during M1)
 - **H1** [ANSWERED] Migration must also place existing projects INTO the SDLC flow, not just the vault: mine existing requirements/plans/docs/tests/code state → draft artifacts (`status: mined-draft`, with provenance) → interview user ONLY on gaps/conflicts → set flow-state to detected phase → resume from there. Extends FR-16 (adoption step), FR-08 (brownfield mining mode), FR-07 (routes mined-drafts to validation). SRS 0.1.2.
 
-## STATUS: INTERVIEW COMPLETE (7 rounds, 30+ decisions) → SRS v0.1.2 VALIDATED → M1 build in progress
+## Branch I — Execution modes (added by user 2026-07-17 during M2)
+- **I1** [ANSWERED] The flow offers two modes, chosen by asking the user (per project, recorded in flow-state): **gated** — user verifies as stakeholder at each milestone/phase gate; **auto** — pipeline proceeds without stopping, review sweeps self-verify as the gate, user questions get queued unless truly blocking. Extends FR-07 (mode in flow-state, gate enforcement), FR-08 (asks the mode at SRS validation), FR-12 (sweep = the gate in auto mode). SRS 0.1.3.
+
+## STATUS: INTERVIEW COMPLETE (7 rounds, 30+ decisions) → SRS v0.1.3 VALIDATED → M1 done + swept → M2 in progress
 
 ## Parking lot / user promised to explain later
 - P1 [ANSWERED] Phase handoff = living docs + tickets in vault: Phase 1 (best model) → SRS + master plan; each phase reads predecessor's artifact, emits its own (design doc + ADRs → tickets w/ req IDs); agents on any platform claim tickets from vault; traceability req→design→code→test; a phase can't start until its input doc exists.

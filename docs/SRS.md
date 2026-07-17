@@ -4,7 +4,7 @@ description: Software Requirements Specification for SwarmVault v1 — central a
 project: SwarmVault
 type: spec
 status: draft-for-validation
-version: 0.1.2
+version: 0.1.3
 date: 2026-07-17
 ---
 
@@ -185,6 +185,10 @@ tested implementation before a milestone closes. *(C8)*
 Each milestone ends with a strong-model review sweep (the framework eating its own food).
 
 ## 9. Changelog
+
+- **0.1.3** (2026-07-17, user addition during M2) — Execution modes (I1): the flow asks
+  once per project whether milestones are user-gated or fully autonomous (sweeps
+  self-verify, questions queued unless blocking). FR-07, FR-08, FR-12 updated.
 
 - **0.1.2** (2026-07-17, user addition during M1) — Brownfield SDLC adoption (H1):
   swarm-migrate gains an adoption step that mines existing requirements/plans/docs/code

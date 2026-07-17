@@ -38,6 +38,9 @@ validate).
   — in repo `docs/`, mirrored to vault `30 Plans/` by sync.
 - **Validation gate:** ends by walking the user through the SRS for explicit approval;
   status flips draft → validated; flow-state updated.
+- **Mode question (I1):** at validation, asks how the build should run — gated (user
+  verifies each milestone as stakeholder) or auto (self-verifying sweeps, no stops) —
+  and records the answer in flow-state for FR-07 to enforce.
 
 ## Acceptance criteria (EARS)
 

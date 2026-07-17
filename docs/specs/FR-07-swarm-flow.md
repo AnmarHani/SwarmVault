@@ -28,6 +28,12 @@ project") and the agent figures out where the project stands and does the next r
    phase skill, proceed. Never silently skip a phase gate the SRS marks as user-validated.
 4. Brownfield (H1): artifacts with `status: mined-draft` count as "phase in progress,
    pending validation" — the router offers the validation pass before building on them.
+5. **Execution mode (I1):** flow-state records `mode: gated|auto` (asked once, at SRS
+   validation — FR-08; changeable any time by the user). Gated: every phase/milestone
+   boundary stops for stakeholder verification. Auto: phases chain without stopping;
+   the swarm-review sweep is the milestone gate (FR-12); non-blocking questions are
+   appended to the question queue and batched; the flow stops only when truly blocked
+   (missing credentials, contradictory requirements, destructive actions).
 
 ## Acceptance criteria (EARS)
 

@@ -26,6 +26,9 @@ tracked work, not a chat message that scrolls away (C7/C9).
   4. *Risk* — security smells, missing input validation, devil's-advocate pass on the
      design assumptions (the-fool stance).
 - Verifies traceability: FR → ticket → commit → test chain intact.
+- **Auto mode (I1):** when flow-state says `mode: auto`, the sweep IS the milestone gate:
+  fulfillment findings must be resolved (via new tickets, re-swept) before the next
+  milestone opens; the user gets the report in the vault, not a blocking prompt.
 - **Output:** review report (vault, human-lane) + one ticket per accepted finding
   (machine-lane, FR-linked). Milestone closes only when fulfillment findings are resolved
   or explicitly waived by the user.
