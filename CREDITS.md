@@ -7,13 +7,14 @@ learned from these authors' work. Thank you. (Licenses recorded as found at merg
 ## Skill & method influences
 
 - **Jesse Vincent (obra) — [superpowers](https://github.com/obra/superpowers)**
-  *(license: verify at repo)* — the process backbone: systematic-debugging (evidence →
+  *(MIT, verified 2026-07-17)* — the process backbone: systematic-debugging (evidence →
   hypothesis → root cause), test-driven-development, subagent-driven development &
   parallel dispatch, writing-plans/executing-plans, verification-before-completion,
   brainstorming, writing-skills (skills-are-code rigor). Shaped: swarm-spec,
   swarm-implement, swarm-debug, swarm-review, swarm-skill-forge.
 
-- **Matt Pocock — skills / [aihero.dev](https://www.aihero.dev)** *(none published)* —
+- **Matt Pocock — [skills](https://github.com/mattpocock/skills) /
+  [aihero.dev](https://www.aihero.dev)** *(MIT, verified 2026-07-17)* —
   the grilling interview stance (recommendation-first, decisions-are-the-user's),
   to-spec/to-tickets (conversation → spec → tracer-bullet tickets), two-axis code review
   (standards + spec), codebase-design (deep modules), domain-modeling,
@@ -31,7 +32,8 @@ learned from these authors' work. Thank you. (Licenses recorded as found at merg
   the token-compression insight behind the machine-lane compact-writing guideline.
 
 - **[euxx — claude-skills-for-copilot](https://github.com/euxx/claude-skills-for-copilot)**
-  code-simplifier — the simplify-before-done stance in swarm-implement and swarm-review.
+  *(MIT, portions Apache-2.0; verified 2026-07-17)* — code-simplifier: the
+  simplify-before-done stance in swarm-implement and swarm-review.
 
 ## Reference works
 
