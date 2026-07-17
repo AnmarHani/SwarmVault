@@ -56,7 +56,13 @@
 ## Branch I — Execution modes (added by user 2026-07-17 during M2)
 - **I1** [ANSWERED] The flow offers two modes, chosen by asking the user (per project, recorded in flow-state): **gated** — user verifies as stakeholder at each milestone/phase gate; **auto** — pipeline proceeds without stopping, review sweeps self-verify as the gate, user questions get queued unless truly blocking. Extends FR-07 (mode in flow-state, gate enforcement), FR-08 (asks the mode at SRS validation), FR-12 (sweep = the gate in auto mode). SRS 0.1.3.
 
-## STATUS: INTERVIEW COMPLETE (7 rounds, 30+ decisions) → SRS v0.1.3 VALIDATED → M1 done + swept → M2 in progress
+## Branch J — Stateless resumability (added by user 2026-07-17 during M2)
+- **J1** [ANSWERED] "Continue project X" must work from a cold session using vault state ALONE — flow-state + open tickets + question queue + memory — never requiring the previous session's transcript. Therefore: state is checkpointed CONTINUOUSLY (after each significant step: ticket claimed/done, question answered, phase advanced), not only at session end. Session notes remain as journal/history, not as required state. Extends FR-07 (resume contract), FR-11 (workers checkpoint ticket state as they go), FR-14 (contract rule), FR-21 (doctrine). SRS 0.1.4.
+
+## STATUS: INTERVIEW COMPLETE → SRS v0.1.3 VALIDATED → M1 done + swept → **AUTO MODE** (user, 2026-07-17): M2→M3→M4 chained, sweeps self-verify, non-blocking questions queued below
+
+## Queued questions for the user (non-blocking, answer anytime)
+- (none yet)
 
 ## Parking lot / user promised to explain later
 - P1 [ANSWERED] Phase handoff = living docs + tickets in vault: Phase 1 (best model) → SRS + master plan; each phase reads predecessor's artifact, emits its own (design doc + ADRs → tickets w/ req IDs); agents on any platform claim tickets from vault; traceability req→design→code→test; a phase can't start until its input doc exists.

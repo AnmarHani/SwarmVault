@@ -26,7 +26,9 @@ sacrificed — by design, not by hoping agents are frugal (G1/G2, added mid-inte
    review sweeps, complex logic.
 4. **Milestone-only sweeps** — heavyweight review at milestones, not per commit (FR-12).
 5. **Handoff-by-vault** — long sessions end with a resume note; fresh (cheaper) sessions
-   continue from it instead of dragging a giant context.
+   continue from it instead of dragging a giant context. Stronger (J1): state is
+   checkpointed continuously as work happens, so "continue project X" works from a cold
+   session on vault state alone — session notes are journal, not required state.
 6. **Machine-lane compact writing** — tickets, claims, queue entries, session notes,
    memory descriptions in terse telegraphic style (guideline with before/after examples in
    swarm-vault); human-lane docs (SRS, design, ADRs, README) stay full prose. Compression

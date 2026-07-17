@@ -4,7 +4,7 @@ description: Software Requirements Specification for SwarmVault v1 — central a
 project: SwarmVault
 type: spec
 status: draft-for-validation
-version: 0.1.3
+version: 0.1.4
 date: 2026-07-17
 ---
 
@@ -185,6 +185,11 @@ tested implementation before a milestone closes. *(C8)*
 Each milestone ends with a strong-model review sweep (the framework eating its own food).
 
 ## 9. Changelog
+
+- **0.1.4** (2026-07-17, user addition during M2) — Stateless resumability (J1):
+  "continue project X" works from a cold session on vault state alone; skills checkpoint
+  state continuously (ticket claimed/done, question answered, phase advanced), never
+  relying on session transcripts. FR-07, FR-11, FR-14, FR-21 updated.
 
 - **0.1.3** (2026-07-17, user addition during M2) — Execution modes (I1): the flow asks
   once per project whether milestones are user-gated or fully autonomous (sweeps

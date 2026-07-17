@@ -28,6 +28,10 @@ cheap (B6, G1).
   session (cheaper model, fresh context) picks it up; machine-lane compact style (G2) with
   the compact-writing guideline inline (imperative, telegraphic, no filler — quality
   content, minimal tokens).
+- **Continuous checkpointing (J1):** durable state is written WHEN it changes (ticket
+  claimed/progressed/done, question answered, phase advanced) — not batched to session
+  end. The test of compliance: kill the session at any moment; a fresh session must
+  resume correctly from the vault alone.
 - **Isolation etiquette:** respect isolation flags; never quote isolated-project content
   into another project's notes (NFR-S2).
 

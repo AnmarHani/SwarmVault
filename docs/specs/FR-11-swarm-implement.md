@@ -45,6 +45,9 @@ Codex.
 - Workers shall read only the context a ticket names (spec, design section, code-notes) —
   not the whole vault (NFR-P3).
 - WHILE parallelism is ON, two workers shall never hold the same claim (NFR-R4).
+- Workers shall checkpoint state continuously (J1): claim on start, ticket frontmatter
+  progress notes at significant steps, `done` + commit/test refs on completion — so a
+  killed session's work is resumable from the vault alone, transcript never needed.
 
 ## Influences (credited in FR-19)
 
