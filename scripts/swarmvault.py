@@ -270,6 +270,9 @@ def dump_frontmatter(fm: dict) -> str:
     lines = []
     for k, v in fm.items():
         if isinstance(v, list):
+            if not v:
+                lines.append(f"{k}: []")  # bare "k:" would read back as "", not []
+                continue
             lines.append(f"{k}:")
             lines.extend(f"  - {_dump_scalar(x)}" for x in v)
         elif isinstance(v, dict):
@@ -866,7 +869,7 @@ def git_info(path: str) -> str | None:
             return None
         date, _, subject = r.stdout.strip().partition("|")
         return f"Last commit **{date}** — {subject[:80]}"
-    except (OSError, Exception):
+    except Exception:
         return None
 
 
@@ -914,6 +917,14 @@ def tickets_dir(vault: Path, project: str) -> Path:
     return vault / PLANS / project / "tickets"
 
 
+def _claim_age(claim: Path) -> float | None:
+    """Claim age in seconds, or None if it vanished mid-look (TOCTOU-safe)."""
+    try:
+        return time.time() - claim.stat().st_mtime
+    except OSError:
+        return None
+
+
 def cmd_claim(args) -> int:
     vault = require_vault()
     tdir = tickets_dir(vault, args.project)
@@ -922,37 +933,78 @@ def cmd_claim(args) -> int:
         print(f"error: no ticket {args.ticket} under {tdir}")
         return 1
     claim = tdir / f"{args.ticket}.claim"
-    if claim.exists():
+
+    def try_create() -> bool:
         try:
-            info = json.loads(claim.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            info = {}
-        age = time.time() - claim.stat().st_mtime
-        ttl = float(load_config().get("claim_ttl_hours") or CLAIM_TTL_S / 3600) * 3600
-        if age > ttl and args.break_stale:
-            # Log the takeover on the ticket itself, then fall through to re-claim.
-            note = f"\n> claim by `{info.get('agent', '?')}` went stale ({int(age / 60)} min); broken by `{args.agent}`.\n"
-            with matches[0].open("a", encoding="utf-8") as fh:
-                fh.write(note)
-            claim.unlink()
-        else:
-            holder = info.get("agent", "unknown")
-            state = "STALE — re-run with --break-stale to take over" if age > ttl else "active"
-            print(f"already claimed by {holder} ({state})")
-            return 1
+            fd = os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return False
+        os.write(fd, json.dumps({
+            "agent": args.agent,
+            "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "pid": os.getpid(),
+        }).encode())
+        os.close(fd)
+        return True
+
+    if try_create():
+        print(f"claimed {matches[0].name}")
+        return 0
+
     try:
-        fd = os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
+        info = json.loads(claim.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        info = {}
+    age = _claim_age(claim)
+    if age is None:  # holder released between our create and our look — one retry
+        if try_create():
+            print(f"claimed {matches[0].name}")
+            return 0
         print("lost the race — another agent claimed it first")
         return 1
-    os.write(fd, json.dumps({
-        "agent": args.agent,
-        "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "pid": os.getpid(),
-    }).encode())
-    os.close(fd)
-    print(f"claimed {matches[0].name}")
-    return 0
+
+    ttl = float(load_config().get("claim_ttl_hours") or CLAIM_TTL_S / 3600) * 3600
+    if age <= ttl or not args.break_stale:
+        holder = info.get("agent", "unknown")
+        state = "STALE — re-run with --break-stale to take over" if age > ttl else "active"
+        print(f"already claimed by {holder} ({state})")
+        return 1
+
+    # Breaking a stale claim: breakers serialize on a break-lock, and staleness is
+    # RE-VERIFIED under that lock — otherwise a second breaker that also saw "stale"
+    # could unlink the winner's fresh claim (two winners; found by the M1 race test).
+    brk = tdir / f"{args.ticket}.claim.break"
+    try:
+        os.close(os.open(brk, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        try:
+            if time.time() - brk.stat().st_mtime > LOCK_STALE_S:
+                brk.unlink()  # crashed breaker; cleared for the next attempt
+        except OSError:
+            pass
+        print("another agent is breaking this stale claim — stand down")
+        return 1
+    try:
+        age = _claim_age(claim)
+        if age is not None and age > ttl:
+            with matches[0].open("a", encoding="utf-8") as fh:
+                fh.write(f"\n> claim by `{info.get('agent', '?')}` went stale "
+                         f"({int(age / 60)} min); broken by `{args.agent}`.\n")
+            try:
+                claim.unlink()
+            except FileNotFoundError:
+                pass
+        won = try_create()
+    finally:
+        try:
+            brk.unlink()
+        except OSError:
+            pass
+    if won:
+        print(f"claimed {matches[0].name} (stale claim broken)")
+        return 0
+    print("lost the race — another agent claimed it first")
+    return 1
 
 
 def cmd_release(args) -> int:

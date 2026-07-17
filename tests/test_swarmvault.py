@@ -109,6 +109,12 @@ class TestFrontmatter(unittest.TestCase):
         parsed, _ = sv.split_frontmatter(sv.render(fm, "b"))
         self.assertEqual(parsed, fm)
 
+    def test_roundtrip_empty_list(self):
+        # `requires: []` must survive a rewrite (release --done re-renders tickets).
+        fm = {"name": "t", "requires": []}
+        parsed, _ = sv.split_frontmatter(sv.render(fm, "b"))
+        self.assertEqual(parsed["requires"], [])
+
     def test_type_precedence_tag_wins(self):
         # swarm/* tag must shadow a stray `type:` (silent omission guard, FR-03).
         self.assertEqual(sv.note_type({"type": "project"}, ["swarm/memory"]), "memory")
@@ -322,6 +328,31 @@ class TestClaims(Base):
         fm, _ = sv.split_frontmatter(t.read_text(encoding="utf-8"))
         self.assertEqual(fm["status"], "done")
         self.assertFalse(claim.exists())
+
+    def test_fr05_stale_break_race_no_crash(self):
+        # Two agents may both see a stale claim; both must survive, one must win.
+        t = self.make_ticket()
+        claim = t.parent / "TK-001.claim"
+        self.run_cli("claim", "TK-001", "--project", "P", "--agent", "a1")
+        old = time.time() - sv.CLAIM_TTL_S - 60
+        os.utime(claim, (old, old))
+        results = []
+        barrier = threading.Barrier(4)
+
+        def breaker(i):
+            barrier.wait()
+            code, _ = self.run_cli("claim", "TK-001", "--project", "P",
+                                   "--agent", f"b{i}", "--break-stale")
+            results.append(code)
+
+        threads = [threading.Thread(target=breaker, args=(i,)) for i in range(4)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        self.assertEqual(len(results), 4, "no breaker thread may crash")
+        self.assertEqual(results.count(0), 1, f"exactly one breaker wins: {results}")
+        self.assertFalse((t.parent / "TK-001.claim.break").exists(), "break-lock released")
 
     def test_fr05_claim_requires_ticket(self):
         self.make_project("P")
