@@ -1,10 +1,8 @@
-# 🐝 SwarmVault
+# 🎛️ SwarmVault
 
-**Your AI agents forget everything. SwarmVault doesn't.**
+**Your AI agents does not synchronise. SwarmVault does.**
 
-Run 10 Claude Code agents and 10 Codex agents on the same project, in parallel, across
-weeks of sessions — and every one of them knows what all the others learned, decided,
-and built. One vault. Every agent. Zero amnesia.
+A shared knowledge vault + full software-engineering workflow for AI coding agents — run Claude Code and Codex in parallel with one memory, one plan.
 
 > 📦 Zero dependencies · 📝 Plain markdown · 🕸️ Obsidian-optional graph ·
 > 🆓 MIT
@@ -13,13 +11,13 @@ and built. One vault. Every agent. Zero amnesia.
 
 **Door 1 — let your agent do it** *(the fun one)*: paste this into Claude Code or Codex:
 
-> Read https://github.com/YOUR_GITHUB_USER/swarmvault/blob/main/INSTALL.md and
+> Read https://github.com/AnmarHani/swarmvault/blob/main/INSTALL.md and
 > integrate SwarmVault into my setup.
 
 Your agent clones it, builds your vault, wires its own hooks, and asks you the three
 questions that are actually yours to answer.
 
-**Door 2 — script:** `git clone https://github.com/YOUR_GITHUB_USER/swarmvault && cd swarmvault && ./install.sh`
+**Door 2 — script:** `git clone https://github.com/AnmarHani/swarmvault && cd swarmvault && ./install.sh`
 
 **Door 3 — manual:** copy `skills/` into `.claude/skills/`, `scripts/` anywhere, and
 follow [INSTALL.md](INSTALL.md) §3. It's all just markdown and one Python file.
@@ -61,7 +59,7 @@ flowchart LR
         A2[Claude Code #2]
         A3[Codex #1]
     end
-    V[(🐝 SwarmVault<br/>markdown vault)]
+    V[(🎛️ SwarmVault<br/>markdown vault)]
     A1 <-->|query · sync · claim| V
     A2 <-->|query · sync · claim| V
     A3 <-->|query · sync · claim| V
@@ -88,6 +86,26 @@ files.
 **Claude Code or Codex?** Both, first-class. The core is plain markdown + stock
 Python 3, so other agent platforms are a thin adapter away.
 
+**Is the orchestrator/daemon enabled by default?** No. The standard installation never
+starts a daemon: the vault, skills, claims, and parallel-worker workflow remain fully
+manual/cooperative and service-free. To opt in for a registered project, configure the agents
+you authorize to run, then enable and start the local supervisor:
+
+```bash
+python3 /path/to/swarmvault.py supervisor configure --project MyApp --platform codex --max-workers 2 --model <model> --allow-write
+python3 /path/to/swarmvault.py supervisor configure --project MyApp --platform claude-code --max-workers 2 --model <model> --allow-write
+python3 /path/to/swarmvault.py supervisor enable --project MyApp
+python3 /path/to/swarmvault.py supervisor start --project MyApp
+```
+
+`--allow-write` is an explicit per-platform authorization; omit it for read-only workers.
+`supervisor status --project MyApp` shows the local process and durable worker state;
+`supervisor stop --project MyApp` stops it, and `supervisor disable --project MyApp` prevents
+future starts. `orchestrate --project MyApp` performs one reconciliation without a daemon.
+See [swarm-orchestrate](skills/swarm-orchestrate/SKILL.md) for the full protocol.
+
+> Or just tell your AI Agent to enable it for you!
+
 **Does it phone home?** Never. No network calls, no telemetry, no services — files on
 your disk.
 
@@ -107,5 +125,4 @@ a security boundary.
 ## Credits & license
 
 The skills were written fresh for SwarmVault, but the techniques stand on excellent
-prior work — see **[CREDITS.md](CREDITS.md)** (obra's superpowers, Matt Pocock's skills,
-Jeffallan's collection, and more). MIT — see [LICENSE](LICENSE).
+prior work — see **[CREDITS.md](CREDITS.md)**. MIT — see [LICENSE](LICENSE).

@@ -361,6 +361,49 @@ class TestClaims(Base):
         self.assertIn("no ticket", out)
 
 
+class TestOrchestration(Base):
+    def test_fr22_disabled_by_default_and_enable_is_explicit(self):
+        self.make_project("P")
+        code, out = self.run_cli("supervisor", "status", "--project", "P")
+        self.assertEqual(code, 0)
+        self.assertFalse(json.loads(out)["enabled"])
+        code, _ = self.run_cli("supervisor", "start", "--project", "P")
+        self.assertEqual(code, 1)
+        code, _ = self.run_cli("supervisor", "enable", "--project", "P")
+        self.assertEqual(code, 0)
+        code, out = self.run_cli("supervisor", "status", "--project", "P")
+        self.assertTrue(json.loads(out)["enabled"])
+
+    def test_fr22_adapter_configuration_requires_explicit_write_authorization(self):
+        self.make_project("P")
+        code, _ = self.run_cli("supervisor", "configure", "--project", "P", "--platform", "codex",
+                               "--max-workers", "2", "--model", "gpt-test")
+        self.assertEqual(code, 0)
+        cfg = json.loads((self.vault / "30 Plans/P/orchestration/config.json").read_text())
+        self.assertFalse(cfg["adapters"]["codex"]["allow_write"])
+        code, _ = self.run_cli("supervisor", "configure", "--project", "P", "--platform", "claude-code",
+                               "--allow-write")
+        self.assertEqual(code, 0)
+        cfg = json.loads((self.vault / "30 Plans/P/orchestration/config.json").read_text())
+        self.assertTrue(cfg["adapters"]["claude-code"]["allow_write"])
+
+    def test_fr22_signal_control_and_inbox_ack(self):
+        self.make_project("P")
+        code, _ = self.run_cli("signal", "--project", "P", "--agent", "codex-1",
+                               "--event", "registered", "--platform", "codex")
+        self.assertEqual(code, 0)
+        code, out = self.run_cli("control", "--project", "P", "--agent", "codex-1",
+                                 "--action", "wake")
+        self.assertEqual(code, 0)
+        code, out = self.run_cli("inbox", "--project", "P", "--agent", "codex-1")
+        item = json.loads(out)[0]
+        self.assertEqual(item["action"], "wake")
+        code, _ = self.run_cli("inbox", "--project", "P", "--agent", "codex-1", "--ack", item["id"])
+        self.assertEqual(code, 0)
+        code, out = self.run_cli("inbox", "--project", "P", "--agent", "codex-1")
+        self.assertEqual(json.loads(out), [])
+
+
 class TestContextAndHook(Base):
     def seed_context(self, sessions=0):
         p = self.make_project("Ctx")

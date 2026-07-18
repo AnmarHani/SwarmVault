@@ -59,10 +59,14 @@
 ## Branch J — Stateless resumability (added by user 2026-07-17 during M2)
 - **J1** [ANSWERED] "Continue project X" must work from a cold session using vault state ALONE — flow-state + open tickets + question queue + memory — never requiring the previous session's transcript. Therefore: state is checkpointed CONTINUOUSLY (after each significant step: ticket claimed/done, question answered, phase advanced), not only at session end. Session notes remain as journal/history, not as required state. Extends FR-07 (resume contract), FR-11 (workers checkpoint ticket state as they go), FR-14 (contract rule), FR-21 (doctrine). SRS 0.1.4.
 
-## STATUS: INTERVIEW COMPLETE → SRS v0.1.3 VALIDATED → M1 done + swept → **AUTO MODE** (user, 2026-07-17): M2→M3→M4 chained, sweeps self-verify, non-blocking questions queued below
+## STATUS: ALL MILESTONES BUILT (auto mode). M1 vault core (28 tests) ✓swept · M2 11 skills + CREDITS ✓swept · M3 install (sandbox-verified) ✓ · M4 README/LICENSE/guide, licenses verified ✓. REMAINING: user gates Q1–Q3 above, then publish.
 
 ## Queued questions for the user (non-blocking, answer anytime)
-- (none yet)
+- Q1: README wording review (FR-20 gate) — read README.md; edit/approve tone, tagline, emoji level before publish.
+- Q2: GitHub username/org + repo name → replace `AnmarHani` placeholder in README.md + INSTALL.md, create repo, push.
+- Q3: LICENSE copyright line currently "SwarmVault contributors" — want your name/handle instead?
+- Q4: caveman plugin author unidentified — if you know the origin, CREDITS.md wants it.
+- Q5: Optional — register SwarmVault itself in your existing Claude Vault, or migrate your vault to the new tooling later? (Left untouched deliberately.)
 
 ## Parking lot / user promised to explain later
 - P1 [ANSWERED] Phase handoff = living docs + tickets in vault: Phase 1 (best model) → SRS + master plan; each phase reads predecessor's artifact, emits its own (design doc + ADRs → tickets w/ req IDs); agents on any platform claim tickets from vault; traceability req→design→code→test; a phase can't start until its input doc exists.

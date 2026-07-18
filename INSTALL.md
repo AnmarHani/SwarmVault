@@ -12,7 +12,7 @@ this file, ignoring the "you are an agent" framing.
 If you are already reading this inside a local clone, use it; otherwise:
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USER/swarmvault ~/.swarmvault
+git clone https://github.com/AnmarHani/swarmvault ~/.swarmvault
 ```
 
 If the clone lives elsewhere, copy it: `cp -r <clone> ~/.swarmvault`.
@@ -92,6 +92,7 @@ This project uses SwarmVault — a shared knowledge vault + SDLC skills. The CLI
 | swarm-design | architecture | ~/.swarmvault/skills/swarm-design/SKILL.md |
 | swarm-design-ui | UI/UX | ~/.swarmvault/skills/swarm-design-ui/SKILL.md |
 | swarm-implement | build/tickets | ~/.swarmvault/skills/swarm-implement/SKILL.md |
+| swarm-orchestrate | optional autonomous dispatch/supervisor | ~/.swarmvault/skills/swarm-orchestrate/SKILL.md |
 | swarm-review | milestone review | ~/.swarmvault/skills/swarm-review/SKILL.md |
 | swarm-debug | any bug | ~/.swarmvault/skills/swarm-debug/SKILL.md |
 | swarm-init / swarm-migrate | onboarding projects | ~/.swarmvault/skills/…/SKILL.md |

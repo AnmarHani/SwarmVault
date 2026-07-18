@@ -39,8 +39,11 @@ import json
 import math
 import os
 import re
+import signal
+import subprocess
 import sys
 import time
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1025,6 +1028,288 @@ def cmd_release(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Optional orchestration supervisor (FR-22). It is disabled unless explicitly
+# enabled. Tickets/claims remain the ownership authority; these files only
+# coordinate workers and leave an auditable, cross-platform trail.
+# ---------------------------------------------------------------------------
+def orchestration_dir(vault: Path, project: str) -> Path:
+    return vault / PLANS / project / "orchestration"
+
+
+def _json_read(path: Path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {} if default is None else default
+
+
+def _json_write(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def _orchestration_config(root: Path) -> dict:
+    path = root / "config.json"
+    cfg = _json_read(path, {})
+    if not path.exists():
+        cfg = {"enabled": False, "interval_seconds": 60, "heartbeat_ttl_seconds": 180}
+        _json_write(path, cfg)
+    return cfg
+
+
+def _event(root: Path, agent: str, event: str, **extra) -> Path:
+    data = {"agent": agent, "event": event,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **extra}
+    dest = root / "signals" / agent / f"{time.time_ns()}-{uuid.uuid4().hex[:8]}.json"
+    _json_write(dest, data)
+    return dest
+
+
+def _latest_agents(root: Path) -> dict:
+    latest = {}
+    for path in (root / "signals").glob("*/*.json") if (root / "signals").exists() else []:
+        data = _json_read(path, {})
+        agent = data.get("agent")
+        if agent and (agent not in latest or path.name > latest[agent][0].name):
+            latest[agent] = (path, data)
+    return {agent: data for agent, (_, data) in latest.items()}
+
+
+def _leader(root: Path, agent: str, ttl: int) -> bool:
+    """Acquire/renew a leader lease. Expired leases are broken under an O_EXCL lock."""
+    lease, lock = root / "leader.lease", root / "leader.break"
+    now = time.time()
+    mine = {"agent": agent, "expires_at": now + ttl,
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    try:
+        fd = os.open(lease, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, json.dumps(mine).encode()); os.close(fd)
+        return True
+    except FileExistsError:
+        old = _json_read(lease, {})
+    if old.get("agent") == agent:
+        _json_write(lease, mine)
+        return True
+    if float(old.get("expires_at", 0) or 0) > now:
+        return False
+    try:
+        os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        return False
+    try:
+        old = _json_read(lease, {})
+        if float(old.get("expires_at", 0) or 0) <= time.time():
+            try: lease.unlink()
+            except FileNotFoundError: pass
+        try:
+            fd = os.open(lease, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, json.dumps(mine).encode()); os.close(fd)
+            return True
+        except FileExistsError:
+            return False
+    finally:
+        try: lock.unlink()
+        except OSError: pass
+
+
+def _open_tickets(vault: Path, project: str) -> list[tuple[str, dict]]:
+    result = []
+    for path in tickets_dir(vault, project).glob("*.md") if tickets_dir(vault, project).exists() else []:
+        fm, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+        if fm.get("status", "open") == "open":
+            result.append((path.stem.split("-", 2)[0] + "-" + path.stem.split("-", 2)[1] if path.stem.startswith("TK-") else path.stem, fm))
+    return result
+
+
+def _pending_control(root: Path, agent: str) -> bool:
+    for path in (root / "control" / agent).glob("*.json") if (root / "control" / agent).exists() else []:
+        if _json_read(path, {}).get("status", "pending") == "pending":
+            return True
+    return False
+
+
+def _write_status(root: Path, project: str, leader: str, agents: dict, stale: list[str], queued: list[dict]) -> dict:
+    state = {"project": project, "leader": leader, "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+             "agents": agents, "stale_agents": stale, "queued_controls": queued}
+    _json_write(root / "status.json", state)
+    lines = [f"# Orchestration status — {project}", "", f"Leader: `{leader}`", "",
+             f"Active agents: {', '.join(sorted(agents)) or 'none'}", f"Stale agents: {', '.join(stale) or 'none'}",
+             f"Queued controls: {len(queued)}"]
+    atomic_write(root / "status.md", "\n".join(lines) + "\n")
+    return state
+
+
+def _launch_worker(vault: Path, project: str, root: Path, platform: str, ticket: str, fm: dict, cfg: dict) -> str | None:
+    """Launch one explicitly configured headless CLI worker without a shell."""
+    adapter = (cfg.get("adapters") or {}).get(platform, {})
+    if not adapter.get("enabled"):
+        return None
+    entry = next((e for e in load_registry(vault) if e.get("name") == project), None)
+    if not entry or not Path(entry.get("path", "")).is_dir():
+        return None
+    worker = f"{platform}-{uuid.uuid4().hex[:10]}"
+    script = str(Path(__file__).resolve())
+    prompt = (f"You are SwarmVault worker {worker}. Work only ticket {ticket} in project {project}. "
+              f"First run: python3 {script} signal --project {project} --agent {worker} --event registered --platform {platform} --ticket {ticket}. "
+              f"Claim it with: python3 {script} claim {ticket} --project {project} --agent {worker}. "
+              "Read the ticket context, implement and test its DoD. Signal progress at meaningful checkpoints; "
+              "on completion release with --done and signal done; on a real blocker signal blocked with a reason.")
+    model = adapter.get("model")
+    allow_write = bool(adapter.get("allow_write"))
+    if platform == "codex":
+        command = ["codex", "exec", "-C", str(entry["path"])]
+        if model: command += ["-m", str(model)]
+        command += ["-s", "workspace-write" if allow_write else "read-only", "-a", "never", prompt]
+    elif platform == "claude-code":
+        command = ["claude", "-p", "--output-format", "json", "--permission-mode", "acceptEdits" if allow_write else "plan"]
+        if model: command += ["--model", str(model)]
+        command += [prompt]
+    else:
+        return None
+    log = (root / "logs" / f"{worker}.log"); log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as fh:
+        proc = subprocess.Popen(command, cwd=str(entry["path"]), stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+    _json_write(root / "processes" / f"{worker}.json", {"agent": worker, "platform": platform, "ticket": ticket,
+                "pid": proc.pid, "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "log": str(log)})
+    _event(root, worker, "registered", platform=platform, ticket=ticket, tier=fm.get("tier", "mid"), model=model or "")
+    return worker
+
+
+def reconcile(vault: Path, project: str, agent: str) -> tuple[int, dict]:
+    root = orchestration_dir(vault, project); root.mkdir(parents=True, exist_ok=True)
+    cfg = _orchestration_config(root)
+    if not _leader(root, agent, max(30, int(cfg.get("heartbeat_ttl_seconds", 180)))):
+        return 1, {"error": "another healthy leader holds the lease"}
+    for procfile in list((root / "processes").glob("*.json")) if (root / "processes").exists() else []:
+        proc = _json_read(procfile, {}); pid = int(proc.get("pid", 0) or 0)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            _event(root, proc.get("agent", "unknown"), "blocked", platform=proc.get("platform", ""),
+                   ticket=proc.get("ticket", ""), reason="launched process exited; inspect worker log")
+            try: procfile.unlink()
+            except OSError: pass
+    agents = _latest_agents(root)
+    now = time.time(); ttl = int(cfg.get("heartbeat_ttl_seconds", 180)); stale = []
+    active = {}
+    for ident, data in agents.items():
+        try: age = now - datetime.fromisoformat(data["at"].replace("Z", "+00:00")).timestamp()
+        except (KeyError, ValueError): age = ttl + 1
+        if data.get("event") not in {"done", "stopped", "quota-wait"} and age > ttl:
+            stale.append(ident)
+        else: active[ident] = data
+    queued = []
+    # Dispatch is a durable request only. Workers retain exclusive ownership by claiming.
+    idle = [a for a, d in active.items()
+            if d.get("event") in {"registered", "heartbeat", "done"} and not _pending_control(root, a)]
+    for ticket, fm in _open_tickets(vault, project):
+        if not idle: break
+        if (tickets_dir(vault, project) / f"{ticket}.claim").exists(): continue
+        worker = idle.pop(0)
+        control = {"status": "pending", "action": "claim", "ticket": ticket, "tier": fm.get("tier", "mid"),
+                   "issued_by": agent, "issued_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        _json_write(root / "control" / worker / f"{time.time_ns()}-{ticket}.json", control)
+        queued.append({"agent": worker, **control})
+    # No registered idle worker? Launch only adapters the user explicitly enabled.
+    if cfg.get("enabled") and not idle:
+        running = len(list((root / "processes").glob("*.json"))) if (root / "processes").exists() else 0
+        for ticket, fm in _open_tickets(vault, project):
+            if (tickets_dir(vault, project) / f"{ticket}.claim").exists(): continue
+            for platform in ("codex", "claude-code"):
+                adapter = (cfg.get("adapters") or {}).get(platform, {})
+                if adapter.get("enabled") and running < int(adapter.get("max_workers", 0)):
+                    worker = _launch_worker(vault, project, root, platform, ticket, fm, cfg)
+                    if worker:
+                        queued.append({"agent": worker, "action": "launch", "ticket": ticket, "platform": platform})
+                        running += 1
+                    break
+    return 0, _write_status(root, project, agent, active, stale, queued)
+
+
+def cmd_signal(args) -> int:
+    root = orchestration_dir(require_vault(), args.project); root.mkdir(parents=True, exist_ok=True)
+    extra = {k: v for k, v in {"platform": args.platform, "ticket": args.ticket, "tier": args.tier,
+             "model": args.model, "reason": args.reason, "retry_at": args.retry_at}.items() if v}
+    print(_event(root, args.agent, args.event, **extra))
+    return 0
+
+
+def cmd_inbox(args) -> int:
+    root = orchestration_dir(require_vault(), args.project)
+    paths = sorted((root / "control" / args.agent).glob("*.json")) if (root / "control" / args.agent).exists() else []
+    if args.ack:
+        matches = [p for p in paths if p.name == args.ack or p.stem == args.ack]
+        if not matches:
+            print("error: control request not found"); return 1
+        data = _json_read(matches[0], {}); data["status"] = "acknowledged"; data["acknowledged_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _json_write(matches[0], data); _event(root, args.agent, "progress", reason=f"acknowledged {matches[0].name}")
+        print(matches[0].name); return 0
+    items = [_json_read(p, {}) | {"id": p.name} for p in paths if _json_read(p, {}).get("status", "pending") == "pending"]
+    print(json.dumps(items, indent=2))
+    return 0
+
+
+def cmd_control(args) -> int:
+    root = orchestration_dir(require_vault(), args.project); root.mkdir(parents=True, exist_ok=True)
+    request = {"status": "pending", "action": args.action, "issued_by": args.by or f"manual-{os.getpid()}",
+               "issued_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "reason": args.reason or ""}
+    dest = root / "control" / args.agent / f"{time.time_ns()}-{args.action}.json"
+    _json_write(dest, request); print(dest.name); return 0
+
+
+def cmd_orchestrate(args) -> int:
+    vault = require_vault(); agent = args.agent or f"leader-{os.getpid()}"
+    code, state = reconcile(vault, args.project, agent)
+    print(json.dumps(state, indent=2)); return code
+
+
+def cmd_supervisor(args) -> int:
+    vault = require_vault(); root = orchestration_dir(vault, args.project); root.mkdir(parents=True, exist_ok=True)
+    cfg = _orchestration_config(root); pidfile = root / "supervisor.pid"
+    if args.action == "enable":
+        cfg["enabled"] = True; _json_write(root / "config.json", cfg); print("supervisor enabled (not started)"); return 0
+    if args.action == "configure":
+        if not args.platform:
+            print("error: configure requires --platform codex|claude-code"); return 1
+        if args.max_workers < 1:
+            print("error: --max-workers must be at least 1"); return 1
+        adapters = cfg.setdefault("adapters", {})
+        adapters[args.platform] = {"enabled": True, "max_workers": args.max_workers,
+                                   "model": args.model or "", "allow_write": bool(args.allow_write)}
+        _json_write(root / "config.json", cfg)
+        print(f"configured {args.platform}: max_workers={args.max_workers}, allow_write={bool(args.allow_write)}")
+        return 0
+    if args.action == "disable":
+        cfg["enabled"] = False; _json_write(root / "config.json", cfg); print("supervisor disabled"); return 0
+    if args.action == "status":
+        print(json.dumps({"enabled": cfg.get("enabled", False), "pid": _json_read(pidfile, {}), "state": _json_read(root / "status.json", {})}, indent=2)); return 0
+    if args.action == "stop":
+        info = _json_read(pidfile, {}); pid = int(info.get("pid", 0) or 0)
+        if pid:
+            try: os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+        try: pidfile.unlink()
+        except OSError: pass
+        print("supervisor stopped"); return 0
+    if args.action == "start":
+        if not cfg.get("enabled"):
+            print("error: enable first: supervisor enable --project " + args.project); return 1
+        info = _json_read(pidfile, {}); pid = int(info.get("pid", 0) or 0)
+        try: os.kill(pid, 0); print(f"supervisor already running ({pid})"); return 0
+        except OSError: pass
+        log = (root / "supervisor.log").open("a", encoding="utf-8")
+        proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "supervisor", "run", "--project", args.project], stdout=log, stderr=log, start_new_session=True)
+        _json_write(pidfile, {"pid": proc.pid, "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        print(f"supervisor started ({proc.pid})"); return 0
+    # foreground loop: suitable for systemd/launchd or a terminal.
+    if not cfg.get("enabled"):
+        print("error: supervisor is disabled"); return 1
+    while True:
+        reconcile(vault, args.project, f"supervisor-{os.getpid()}")
+        time.sleep(max(5, int(_orchestration_config(root).get("interval_seconds", 60))))
+
+
+# ---------------------------------------------------------------------------
 # init / register / doctor (FR-02 / FR-03 / FR-18)
 # ---------------------------------------------------------------------------
 TEMPLATE_NOTES = {
@@ -1293,6 +1578,37 @@ def main(argv: list[str] | None = None) -> int:
     rl.add_argument("--project", required=True)
     rl.add_argument("--done", action="store_true")
     rl.set_defaults(fn=cmd_release)
+
+    sg = sub.add_parser("signal", help="write a durable worker signal for the optional supervisor")
+    sg.add_argument("--project", required=True); sg.add_argument("--agent", required=True)
+    sg.add_argument("--event", required=True, choices=["registered", "heartbeat", "progress", "done", "blocked", "quota-wait", "stopped"])
+    sg.add_argument("--platform"); sg.add_argument("--ticket"); sg.add_argument("--tier")
+    sg.add_argument("--model"); sg.add_argument("--reason"); sg.add_argument("--retry-at")
+    sg.set_defaults(fn=cmd_signal)
+
+    ib = sub.add_parser("inbox", help="read or acknowledge durable supervisor requests")
+    ib.add_argument("--project", required=True); ib.add_argument("--agent", required=True)
+    ib.add_argument("--ack", help="acknowledge one request id returned by inbox")
+    ib.set_defaults(fn=cmd_inbox)
+
+    ct = sub.add_parser("control", help="send a durable start/stop/wake request to a registered worker")
+    ct.add_argument("--project", required=True); ct.add_argument("--agent", required=True)
+    ct.add_argument("--action", required=True, choices=["start", "stop", "wake", "retry"])
+    ct.add_argument("--by"); ct.add_argument("--reason")
+    ct.set_defaults(fn=cmd_control)
+
+    oc = sub.add_parser("orchestrate", help="run one orchestration reconciliation; no daemon required")
+    oc.add_argument("--project", required=True); oc.add_argument("--agent")
+    oc.set_defaults(fn=cmd_orchestrate)
+
+    sp = sub.add_parser("supervisor", help="manage the optional local orchestration process")
+    sp.add_argument("action", choices=["enable", "disable", "configure", "start", "run", "stop", "status"])
+    sp.add_argument("--project", required=True)
+    sp.add_argument("--platform", choices=["codex", "claude-code"])
+    sp.add_argument("--max-workers", type=int, default=1)
+    sp.add_argument("--model")
+    sp.add_argument("--allow-write", action="store_true", help="allow launched workers to edit the registered project")
+    sp.set_defaults(fn=cmd_supervisor)
 
     d = sub.add_parser("doctor", help="self-check the installation")
     d.set_defaults(fn=cmd_doctor)

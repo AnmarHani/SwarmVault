@@ -4,7 +4,7 @@ description: Software Requirements Specification for SwarmVault v1 — central a
 project: SwarmVault
 type: spec
 status: draft-for-validation
-version: 0.1.4
+version: 0.1.5
 date: 2026-07-17
 ---
 
@@ -52,16 +52,20 @@ write-isolation concurrency + ticket claim protocol; Claude Code + Codex adapter
 11-skill catalog; three-door install; CREDITS, README, Obsidian guide, security disclaimer;
 token-economy doctrine.
 
-**Out of scope (v1):** security *enforcement* (isolation is cooperative); vector/embedding
-search; background daemons or cron services; first-class support for platforms beyond
-Claude Code and Codex (the plain-markdown core keeps them cheap to add later); non-markdown
-storage; contacting upstream authors as a release gate.
+**Out of scope (core):** security *enforcement* (isolation is cooperative); vector/embedding
+search; a required background daemon or cron service; first-class support for platforms
+beyond Claude Code and Codex (the plain-markdown core keeps them cheap to add later);
+non-markdown storage; contacting upstream authors as a release gate. An **optional** local
+orchestration supervisor is in scope: it is disabled and not installed by default, and is
+never required for vault, skills, or normal parallel ticket work.
 
 ## 4. Constraints
 
 - **C-1** Scripts run on stock Python ≥ 3.9 with **zero pip dependencies** (hand-rolled
   minimal frontmatter parser; no PyYAML). *(E4)*
-- **C-2** Everything is plain markdown + JSON config. No databases, no services. *(B1, B4)*
+- **C-2** The core is plain markdown + JSON config with no databases or required services.
+  The optional supervisor persists only plain files and runs locally when the user enables
+  it. *(B1, B4, K1)*
 - **C-3** MIT license; no verbatim copying from upstreams; all influences credited. *(A4, D2)*
 - **C-4** Scripts make **no network calls**. *(NFR-S)*
 - **C-5** Primary OS targets: Linux, macOS, WSL. Native Windows best-effort. *(E4)*
@@ -95,6 +99,7 @@ Detail per feature in `specs/FR-XX-*.md`. Priorities: **M**ust / **S**hould / **
 | FR-15 | `swarm-init` — new-project onboarding, vault connect, default-vault option | M | E2 |
 | FR-16 | `swarm-migrate` — existing-project migration + SDLC adoption (mine existing reqs/docs/state, enter the flow mid-phase) | M | E2 H1 |
 | FR-17 | `swarm-skill-forge` — author new high-quality skills | S | D1 |
+| FR-22 | Optional orchestration supervisor — dispatch, signals, recovery, quota scheduling | S | K1 |
 
 ### Distribution & cross-cutting
 | ID | Feature | Pri | Decisions |
@@ -181,10 +186,18 @@ tested implementation before a milestone closes. *(C8)*
   doors; Claude Code hooks fire; Codex AGENTS.md path exercised.
 - **M4 — Docs & release**: FR-19, FR-20. Exit: README review with user; CREDITS complete;
   license check on superpowers upstream done; publish to GitHub.
+- **M5 — Optional autonomy add-on**: FR-22. Exit: disabled-default install verified;
+  simulated Claude/Codex adapters prove dispatch, heartbeat recovery, and quota wait/resume
+  without duplicate ticket ownership.
 
 Each milestone ends with a strong-model review sweep (the framework eating its own food).
 
 ## 9. Changelog
+
+- **0.1.5** (2026-07-18, user addition) — Optional orchestration supervisor (K1): add a
+  local, explicit opt-in control plane for role/model-aware dispatch, per-agent signals,
+  stale-worker recovery, and scheduled continuation after quota waits. Core SwarmVault
+  remains daemon-free and fully functional without it. FR-22 added.
 
 - **0.1.4** (2026-07-17, user addition during M2) — Stateless resumability (J1):
   "continue project X" works from a cold session on vault state alone; skills checkpoint
