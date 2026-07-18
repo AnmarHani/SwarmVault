@@ -1,10 +1,7 @@
 # 🎛️ SwarmVault
-# 🎛️ SwarmVault
 
 **Your AI agents does not synchronise. SwarmVault does.**
-**Your AI agents does not synchronise. SwarmVault does.**
 
-A shared knowledge vault + full software-engineering workflow for AI coding agents — run Claude Code and Codex in parallel with one memory, one plan.
 A shared knowledge vault + full software-engineering workflow for AI coding agents — run Claude Code and Codex in parallel with one memory, one plan.
 
 > 📦 Zero dependencies · 📝 Plain markdown · 🕸️ Obsidian-optional graph ·
