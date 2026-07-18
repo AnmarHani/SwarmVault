@@ -1,7 +1,10 @@
 # 🎛️ SwarmVault
+# 🎛️ SwarmVault
 
 **Your AI agents does not synchronise. SwarmVault does.**
+**Your AI agents does not synchronise. SwarmVault does.**
 
+A shared knowledge vault + full software-engineering workflow for AI coding agents — run Claude Code and Codex in parallel with one memory, one plan.
 A shared knowledge vault + full software-engineering workflow for AI coding agents — run Claude Code and Codex in parallel with one memory, one plan.
 
 > 📦 Zero dependencies · 📝 Plain markdown · 🕸️ Obsidian-optional graph ·
@@ -12,11 +15,13 @@ A shared knowledge vault + full software-engineering workflow for AI coding agen
 **Door 1 — let your agent do it** *(the fun one)*: paste this into Claude Code or Codex:
 
 > Read https://github.com/AnmarHani/swarmvault/blob/main/INSTALL.md and
+> Read https://github.com/AnmarHani/swarmvault/blob/main/INSTALL.md and
 > integrate SwarmVault into my setup.
 
 Your agent clones it, builds your vault, wires its own hooks, and asks you the three
 questions that are actually yours to answer.
 
+**Door 2 — script:** `git clone https://github.com/AnmarHani/swarmvault && cd swarmvault && ./install.sh`
 **Door 2 — script:** `git clone https://github.com/AnmarHani/swarmvault && cd swarmvault && ./install.sh`
 
 **Door 3 — manual:** copy `skills/` into `.claude/skills/`, `scripts/` anywhere, and
@@ -59,6 +64,7 @@ flowchart LR
         A2[Claude Code #2]
         A3[Codex #1]
     end
+    V[(🎛️ SwarmVault<br/>markdown vault)]
     V[(🎛️ SwarmVault<br/>markdown vault)]
     A1 <-->|query · sync · claim| V
     A2 <-->|query · sync · claim| V
