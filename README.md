@@ -60,7 +60,6 @@ flowchart LR
         A3[Codex #1]
     end
     V[(🎛️ SwarmVault<br/>markdown vault)]
-    V[(🎛️ SwarmVault<br/>markdown vault)]
     A1 <-->|query · sync · claim| V
     A2 <-->|query · sync · claim| V
     A3 <-->|query · sync · claim| V
