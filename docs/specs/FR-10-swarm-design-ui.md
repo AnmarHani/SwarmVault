@@ -18,14 +18,24 @@ taste decisions put to me (C3/C4).
 
 - Runs alongside swarm-design when the SRS declares any user interface; skipped otherwise
   (swarm-flow decides).
-- Interviews for: brand/identity direction (with variations), audience, platform
-  conventions; then produces a **design-system doc**: color (accessible palettes),
-  typography scale, spacing/box-model system, grid + auto-layout containers, atomic
-  component inventory (atoms → components → templates → pages), responsive rules +
-  distinct mobile design where relevant, interaction/motion notes.
-- **Per-interface guidance** lives in `references/` loaded on demand (token economy):
-  web, mobile, desktop, TUI, CLI (help text, flags, exit codes and error style are design
-  too).
+- Interviews (light, options-first) for: brand/identity direction, audience, platform
+  conventions, accessibility, existing assets.
+- **Proposes a design system with the user (C4):** from the product's category and
+  personality it synthesizes a **recommended** design system and ≥1 **distinct alternative**,
+  each presented as a filled-in panel (pattern/layout, style family, color roles, typography,
+  effects, domain anti-patterns), so the user chooses from something concrete. The style /
+  category / pattern vocabulary is a menu to reason from, **not a cage** — the skill designs
+  for the product's real needs.
+- Then produces a **design-system doc**: color (accessible palettes), typography scale,
+  spacing/box-model system, grid + auto-layout containers, atomic component inventory
+  (atoms → components → templates → pages), **per-page layout chosen from offered options**
+  (landing-page and dashboard patterns), responsive rules + distinct mobile design where
+  relevant, interaction/motion notes.
+- **On-demand references** loaded per need (token economy): per-interface guidance
+  (`web`, `mobile`, `desktop`, `tui-cli` — for TUI/CLI, help text, flags, exit codes and
+  error style are the design), plus `style-menu` (product categories, style families, layout
+  patterns, the proposal-panel template, and resources: checklist.design, Laws of UX,
+  color/type/psychology and accessibility tools).
 - Applies UX laws (Fitts, Hick, Jakob, Miller, proximity/common-region…) as review
   checklist, not jargon dump.
 - Output: `docs/design-ui.md` + component inventory; mirrored to vault; user validation
@@ -41,11 +51,18 @@ taste decisions put to me (C3/C4).
   (references split keeps context lean — NFR-P3).
 - Accessibility shall be addressed explicitly (contrast, focus, touch targets) for
   graphical interfaces.
-- Brand direction shall be offered as ≥2 distinct variations before locking one.
+- Brand direction shall be offered as ≥2 distinct, fully-specified design-system directions
+  (the proposal panel) before locking one.
+- WHEN a screen has more than one reasonable layout, THEN the skill shall offer layout options
+  (e.g. landing-page or dashboard patterns) and record the chosen one with its rationale,
+  rather than defaulting silently.
+- WHEN the interface is graphical, THEN the style/category menu shall be treated as guidance
+  that does not constrain the design to its listed options.
 
 ## Influences (credited in FR-19)
 
-Laws of UX (Yablonski), roadmap.sh/design-system, Frost's Atomic Design, Figma typography
-resource, NameThatUI (namethatui.com — precise component vocabulary, added 2026-07-17),
-Anthropic frontend-design skill (taste stance), snyk top-UI-skills survey, user-supplied
-design principles list.
+Laws of UX (Yablonski, lawsofux.com), roadmap.sh/design-system, Frost's Atomic Design, Figma
+typography resource, NameThatUI (namethatui.com — precise component vocabulary, added
+2026-07-17), checklist.design (per-element/page checklists, added 2026-07-24), Anthropic
+frontend-design skill (taste stance), snyk top-UI-skills survey, user-supplied design
+principles list and design-system-proposal pattern.

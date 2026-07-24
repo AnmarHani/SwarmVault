@@ -77,13 +77,45 @@ for audit/search; the summary is derived and may be regenerated at any time.
    agent or human to answer: who is leader, what is running, what completed, what is blocked,
    what is waiting for quota, and when the next action will occur.
 
-## Platform adapters
+## Platform adapters and the recognized roster
 
 Adapters are capability declarations, not promises that every vendor can be controlled.
 Each adapter states independently whether it can `launch`, `observe`, `send-control`, and
 `stop` a worker. The supervisor shall use only declared capabilities and degrade to a visible
 manual-action request when one is absent. It shall not assume Claude Code can command Codex,
 or vice versa.
+
+SwarmVault **recognizes** a broad agent roster as cooperative workers that can run the
+swarm-implement worker loop against the shared vault (Claude Code, Codex, Cursor, Windsurf,
+Antigravity, GitHub Copilot, Kiro, Qoder, Roo Code, Gemini CLI, Trae, OpenCode, Continue,
+CodeBuddy, Droid, KiloCode, Warp, Augment, CodeWhale, …). Launching is driven by a
+**declarative adapter registry** with three tiers:
+
+1. **Verified** (`claude-code`, `codex`) — exact non-interactive invocation known, spawned
+   without a shell, ownership confirmed by the atomic claim; both a write and a read-only mode.
+2. **Best-effort defaults** (e.g. `gemini`, `opencode`, `droid`, `cursor`, `copilot`) — shipped
+   command templates for fast-moving CLIs that the user is told to verify or override. These
+   shall launch **only with explicit write authorization**: read-only headless launch is
+   offered only for adapters with a known read/plan mode, so a read-only request can never
+   start a writing agent. A wrong flag shall fail visibly (exited process logged as blocked),
+   never silently.
+3. **User-supplied** — any platform (including unlisted ones) may be wired with a
+   `launch_cmd` template (`configure --launch-cmd`, tokens `{cwd} {model} {prompt}`) that the
+   user vouches for.
+
+When no adapter and no template exist for a requested platform/mode, the supervisor shall
+record a **manual-action request** rather than guessing a command. Configuration is per
+platform: the user chooses **how many workers** to run, the model, whether it may write, and
+optionally the launch command. Adapters remain capability declarations — the supervisor shall
+not assume one platform can command another.
+
+## Relationship to FR-23 and FR-24
+
+Consent-gated continuation across usage limits is specified separately in FR-23 and works with
+or without this supervisor. When the supervisor is running, a worker's `quota-wait` signal
+feeds the same reset-aware scheduling described here. The **smart, budget/model-fit assignment**
+and the **cross-platform observability board** that sit on top of this dispatch layer are
+specified in FR-24.
 
 ## Acceptance criteria (EARS)
 
@@ -99,6 +131,11 @@ or vice versa.
   shall not repeatedly restart that worker before it.
 - WHEN an adapter lacks a control capability, THEN the supervisor shall record the required
   manual action instead of pretending it completed it.
+- WHEN a launch is requested for a platform with no verified read/plan mode AND writes are not
+  authorized, THEN the supervisor shall not launch it and shall record a manual action — a
+  read-only request never starts a writing agent.
+- WHEN a platform has neither a built-in adapter nor a user `launch_cmd`, THEN the supervisor
+  shall record a manual-action request rather than guessing a command line.
 - WHEN the supervisor restarts, THEN it shall reconstruct state from tickets, signals,
   leases, and scheduled waits without requiring an earlier process's memory.
 

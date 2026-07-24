@@ -4,8 +4,8 @@ description: Software Requirements Specification for SwarmVault v1 — central a
 project: SwarmVault
 type: spec
 status: draft-for-validation
-version: 0.1.5
-date: 2026-07-17
+version: 0.1.8
+date: 2026-07-24
 ---
 
 # SwarmVault — Software Requirements Specification (v1)
@@ -26,10 +26,10 @@ and Codex first-class — built on two pillars:
    that adds the graph, backlinks, and a pleasant human reading experience — never a
    dependency.
 
-2. **The Catalog** — eleven skills, as minimal as possible and as high-quality as possible,
-   that walk a project through the full software development lifecycle: requirements →
-   design → implementation → testing → review — with a router that resumes any project from
-   wherever it left off, on any platform.
+2. **The Catalog** — eleven core skills (plus an optional orchestration add-on, FR-22), as
+   minimal as possible and as high-quality as possible, that walk a project through the full
+   software development lifecycle: requirements → design → implementation → testing → review —
+   with a router that resumes any project from wherever it left off, on any platform.
 
 The install story is the differentiator: *paste the repo URL into your agent, and the agent
 integrates the framework itself.*
@@ -49,15 +49,20 @@ integrates the framework itself.*
 **In scope (v1):** vault structure + note schema; config/registry/marker resolution; query
 CLI (BM25 search, filters, context injection, hooks) with `init`/`register`; sync engine;
 write-isolation concurrency + ticket claim protocol; Claude Code + Codex adapters; the
-11-skill catalog; three-door install; CREDITS, README, Obsidian guide, security disclaimer;
-token-economy doctrine.
+eleven-skill core catalog (+ optional orchestration add-on) with budget/model-fit task
+assignment, a cross-platform observability board, consent-gated usage-limit continuation, and
+safe-state compaction; three-door install; CREDITS, README, Obsidian guide, security
+disclaimer; token-economy doctrine.
 
 **Out of scope (core):** security *enforcement* (isolation is cooperative); vector/embedding
-search; a required background daemon or cron service; first-class support for platforms
-beyond Claude Code and Codex (the plain-markdown core keeps them cheap to add later);
-non-markdown storage; contacting upstream authors as a release gate. An **optional** local
-orchestration supervisor is in scope: it is disabled and not installed by default, and is
-never required for vault, skills, or normal parallel ticket work.
+search; a required background daemon or cron service; *automated launch/control* of platforms
+beyond Claude Code and Codex (a broad roster is **recognized** as cooperative workers, but
+only these two headless CLIs are spawned/controlled by the optional supervisor; the
+plain-markdown core keeps others cheap to add later); non-markdown storage; contacting upstream
+authors as a release gate. **In scope but optional:** a local orchestration supervisor (FR-22,
+disabled and not installed by default) and consent-gated usage-limit continuation (FR-23,
+works with or without the supervisor) — neither is ever required for vault, skills, or normal
+parallel ticket work.
 
 ## 4. Constraints
 
@@ -89,7 +94,7 @@ Detail per feature in `specs/FR-XX-*.md`. Priorities: **M**ust / **S**hould / **
 | ID | Skill | Pri | Decisions |
 |---|---|---|---|
 | FR-07 | `swarm-flow` — SDLC router, resume-from-anywhere | M | D4 P1 |
-| FR-08 | `swarm-spec` — requirements interview → SRS + feature specs + question queue | M | C1 C2 |
+| FR-08 | `swarm-spec` — requirements interview → SRS + feature specs + question queue; planning modes + review summary | M | C1 C2 C10 |
 | FR-09 | `swarm-design` — architecture, stack options, ADRs | M | C3 |
 | FR-10 | `swarm-design-ui` — design system, atomic design, UX laws, all interface types | M | C3 C4 |
 | FR-11 | `swarm-implement` — tickets, claims, parallel workers, model tiering, tests-in-ticket | M | C5 C6 |
@@ -99,7 +104,9 @@ Detail per feature in `specs/FR-XX-*.md`. Priorities: **M**ust / **S**hould / **
 | FR-15 | `swarm-init` — new-project onboarding, vault connect, default-vault option | M | E2 |
 | FR-16 | `swarm-migrate` — existing-project migration + SDLC adoption (mine existing reqs/docs/state, enter the flow mid-phase) | M | E2 H1 |
 | FR-17 | `swarm-skill-forge` — author new high-quality skills | S | D1 |
-| FR-22 | Optional orchestration supervisor — dispatch, signals, recovery, quota scheduling | S | K1 |
+| FR-22 | Optional orchestration supervisor — dispatch, signals, recovery, quota scheduling; recognized agent roster | S | K1 K3 |
+| FR-23 | Usage-limit continuation — consent-gated resume across quota resets (with/without supervisor) | S | K2 |
+| FR-24 | Smart orchestration — budget/model-fit task assignment + cross-platform observability board | S | K5 |
 
 ### Distribution & cross-cutting
 | ID | Feature | Pri | Decisions |
@@ -186,13 +193,44 @@ tested implementation before a milestone closes. *(C8)*
   doors; Claude Code hooks fire; Codex AGENTS.md path exercised.
 - **M4 — Docs & release**: FR-19, FR-20. Exit: README review with user; CREDITS complete;
   license check on superpowers upstream done; publish to GitHub.
-- **M5 — Optional autonomy add-on**: FR-22. Exit: disabled-default install verified;
-  simulated Claude/Codex adapters prove dispatch, heartbeat recovery, and quota wait/resume
-  without duplicate ticket ownership.
+- **M5 — Optional autonomy add-on**: FR-22, FR-23, FR-24. Exit: disabled-default install
+  verified; simulated Claude/Codex adapters prove dispatch, heartbeat recovery, and quota
+  wait/resume without duplicate ticket ownership; usage-limit continuation records a
+  consent-gated resume that surfaces in context and self-clears on completion; the scheduler
+  routes tasks by budget/model-fit and the board renders the swarm cross-platform.
 
 Each milestone ends with a strong-model review sweep (the framework eating its own food).
 
 ## 9. Changelog
+
+- **0.1.8** (2026-07-24, user follow-up) — **Smart orchestration & observability (K5) +
+  safe-state compaction (K6):** FR-24 adds capability- and budget-aware task assignment
+  (biggest tasks → most-budget platform, capability first; small tasks → least-budget;
+  per-kind model provisioning; empty/quota platforms skipped) and a cross-platform
+  observability `board` (ticket + usage/limit bars incl. weekly caps and tokens used/limit,
+  per-agent platform·model·effort·task·progress, prompts, recent changes) viewable from any
+  single CLI. FR-21 gains safe-state `checkpoint`/compaction — compact to save tokens only at
+  resumable boundaries, quality first. Model strengths are a method keyed to
+  artificialanalysis.ai, not a pinned leaderboard.
+
+- **0.1.7** (2026-07-24, user follow-up) — **Real launch adapters (K4):** FR-22 gains a
+  declarative, user-overridable launch-adapter registry — verified (Claude Code, Codex),
+  best-effort defaults (Gemini, OpenCode, Droid, Cursor, Copilot; write-only, flags to verify),
+  and a `--launch-cmd` template to wire any other CLI agent. Safety invariant: a read-only
+  request never launches a writing agent; an unknown platform/mode records a manual-action
+  request instead of guessing. Per-platform worker counts are respected on dispatch.
+
+- **0.1.6** (2026-07-24, user feedback pass) — Four additions: (C10) swarm-spec gains
+  **planning modes** (ask-each / recommend-all / hybrid) framed as clarify-not-grill, and a
+  **skimmable SRS review summary** before the approval gate — FR-08 updated. (C4+) swarm-design-ui
+  gains a **design-system-proposal** flow (≥2 filled directions, per-page layout options) and a
+  compact on-demand `style-menu` reference (categories, styles, patterns, checklist.design, UX
+  laws, color/type/psychology tools) — FR-10 updated. (K2) **usage-limit continuation** —
+  consent-gated resume across quota resets via a durable `plan-continue` record that surfaces in
+  context and self-clears — FR-23 added. (K3) **recognized agent roster** (broad set as
+  cooperative workers; control stays with Claude Code + Codex) + a per-platform worker-count
+  setup question — FR-22 and install updated. swarm-implement craft guidance sharpened
+  (simplicity/reuse/readability/maintainability, comment discipline).
 
 - **0.1.5** (2026-07-18, user addition) — Optional orchestration supervisor (K1): add a
   local, explicit opt-in control plane for role/model-aware dispatch, per-agent signals,

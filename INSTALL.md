@@ -111,7 +111,39 @@ python3 ~/.swarmvault/scripts/swarmvault.py register            # add --isolated
 python3 ~/.swarmvault/scripts/swarmvault.py sync --quiet
 ```
 
-## 5. Final verification
+## 5. Optional: autonomy & usage-limit continuation (off by default)
+
+**ASK:** "Do you want the optional local orchestrator? It can run several Claude Code / Codex
+workers in parallel and keep going across usage-limit resets. It's disabled by default and
+never required — say no and everything still works manually."
+
+If **no**, skip to §6 (this is genuinely optional).
+
+If **yes**, **ASK:** "How many agents of each platform should run, which model tier, and may
+they edit code?" Then, from the project root, configure per platform and start:
+
+```bash
+python3 ~/.swarmvault/scripts/swarmvault.py supervisor configure --project <P> --platform claude-code --max-workers <N> --model <model> --allow-write
+python3 ~/.swarmvault/scripts/swarmvault.py supervisor configure --project <P> --platform codex --max-workers <N> --model <model> --allow-write
+python3 ~/.swarmvault/scripts/swarmvault.py supervisor enable  --project <P>
+python3 ~/.swarmvault/scripts/swarmvault.py supervisor start   --project <P>
+```
+
+Omit `--allow-write` for read-only workers. Beyond the two verified platforms you can configure
+best-effort adapters (`gemini`, `opencode`, `droid`, `cursor`, `copilot` — verify their flags)
+or wire any other CLI agent with `--platform <name> --launch-cmd '<cmd> {cwd} {prompt}'`. Give a
+platform per-kind models with `--models 'design=…,coding=…'` so big tasks get the right model;
+the orchestrator assigns by task size and each platform's remaining usage. Watch the whole swarm
+from this CLI with `board --project <P>` (add `--watch 5`), and on long tasks `checkpoint` a
+safe state before compacting. See [swarm-orchestrate](skills/swarm-orchestrate/SKILL.md).
+**Usage-limit continuation works with or without the supervisor:** near a provider limit an agent will ask (in-session) whether to resume after
+the reset — until the project finishes or a point you name — and, if you agree, schedule the
+wake and record it via `plan-continue`. See [swarm-orchestrate](skills/swarm-orchestrate/SKILL.md).
+
+**Verify:** `python3 ~/.swarmvault/scripts/swarmvault.py supervisor status --project <P>`
+reports `enabled` (and a PID if started).
+
+## 6. Final verification
 
 ```bash
 python3 ~/.swarmvault/scripts/swarmvault.py doctor

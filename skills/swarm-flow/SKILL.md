@@ -47,6 +47,15 @@ The mode is asked once at SRS validation (swarm-spec) and the user may change it
 
 ## Rules
 
+- **Scheduled continuation:** if context shows a `⏳ Scheduled continuation` (or
+  `plan-continue show` returns one), you were resumed to push a usage-limited project
+  forward — just route to the current phase and continue. When all milestones are done (or
+  the plan's `--scope` is reached), clear it: `plan-continue clear --project <P>`. See
+  swarm-orchestrate for scheduling one.
+- **Safe-state compaction:** on a long task, at a resumable boundary you may `checkpoint`
+  (record a safe-state note), compact/clear context to save tokens, and continue — the vault is
+  your state. Quality first: never compact mid-work if continuity is carrying the task. Details
+  in swarm-orchestrate.
 - Never silently skip a user-validated gate; user-requested phase jumps are allowed with
   a one-line warning about what's being skipped.
 - On phase completion, the finishing skill updates flow-state

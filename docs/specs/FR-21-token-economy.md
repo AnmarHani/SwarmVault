@@ -29,6 +29,10 @@ sacrificed — by design, not by hoping agents are frugal (G1/G2, added mid-inte
    continue from it instead of dragging a giant context. Stronger (J1): state is
    checkpointed continuously as work happens, so "continue project X" works from a cold
    session on vault state alone — session notes are journal, not required state.
+   **Safe-state compaction (K6):** mid-session, at a resumable boundary, an agent may
+   `checkpoint` a safe-state note, compact/clear its context to save tokens, and continue —
+   the vault holds the state. Quality-bounded: it shall never compact mid-reasoning/mid-edit
+   or when continuity is carrying the task; if the work needs the tokens, it keeps them.
 6. **Machine-lane compact writing** — tickets, claims, queue entries, session notes,
    memory descriptions in terse telegraphic style (guideline with before/after examples in
    swarm-vault); human-lane docs (SRS, design, ADRs, README) stay full prose. Compression
@@ -46,6 +50,9 @@ sacrificed — by design, not by hoping agents are frugal (G1/G2, added mid-inte
   compression: these are guidelines — if applying one would lose information a future
   agent needs, lower output quality, or block progress, take the tokens (user: "if
   quality needs it, then nah, take more").
+- WHEN an agent compacts/clears its context to save tokens, THEN it shall first `checkpoint`
+  a safe-state note (DID/NEXT), and it shall do so only at a resumable boundary — never when
+  active reasoning or continuity would be lost (quality outranks token-saving).
 
 ## Influences (credited in FR-19)
 

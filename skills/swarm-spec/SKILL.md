@@ -1,6 +1,6 @@
 ---
 name: swarm-spec
-description: Requirements phase — relentless, organized stakeholder interview producing a validated SRS + per-feature specs with EARS acceptance criteria and ISO 25010 NFRs. Use to start a new project's requirements, gather/analyze/specify/validate requirements, stress-test a plan, or mine requirements from an existing codebase (brownfield). Also handles requirement changes after validation.
+description: Requirements phase — a clarifying, options-first stakeholder interview that removes confusion and assumptions (not a relentless grilling) and produces a validated SRS + per-feature specs with EARS acceptance criteria and ISO 25010 NFRs. Use to start a new project's requirements, gather/analyze/specify/validate requirements, stress-test a plan, or mine requirements from an existing codebase (brownfield). Also handles requirement changes after validation.
 ---
 
 # swarm-spec — requirements phase
@@ -8,26 +8,44 @@ description: Requirements phase — relentless, organized stakeholder interview 
 Quality here is leverage: every later phase builds on this document. Expect the strongest
 available model — if this session runs a lesser tier, say so and let the user decide.
 
-## The interview
+## Pick a planning mode first
 
-Walk the decision tree branch by branch. For every question: give a **recommendation
-first**, state your assumptions, list alternatives — and accept any free-text answer.
-Facts are looked up (codebase, vault, web); only *decisions* go to the user.
+Requirements work isn't an interrogation — the goal is to **remove confusion and unstated
+assumptions**, not to make the user answer a hundred questions. Before diving in, offer how
+much to involve them (recommend **hybrid**; they can switch anytime):
 
-**The question queue** — `30 Plans/<P>/question-queue.md` (machine lane) — is what keeps
-a long interview honest:
+- **ask-each** — put every genuinely uncertain requirement to the user before locking it.
+  Maximum control, slowest.
+- **recommend-all** — proceed on your recommendations/assumptions for *all* features, record
+  each assumption, and surface them together for one batch review. Fastest.
+- **hybrid** *(default)* — ask on the high-stakes or truly ambiguous decisions; assume sensible
+  defaults on the rest and log them. The user may also scope it ("ask me about auth and
+  billing, assume the rest").
 
-- Every question gets an ID + status: `OPEN / ASKED / ANSWERED / PARTIAL / PARKED`.
-- An answer that resolves other questions: cross-mark them with the answer's ID.
-- The user changes topic or adds a requirement mid-stream: APPEND a new branch; the main
-  track is never dropped. Return to open questions before the phase can complete.
-- The queue survives sessions and context compaction — re-read it on resume.
+Whatever the mode, **every assumption is recorded** (in the question queue, status `ASSUMED`)
+so the closing summary can show exactly what you decided for them.
 
-Probe explicitly, even unprompted: performance, security, usability, reliability
-(ISO 25010: functional suitability, performance efficiency, compatibility, usability,
-reliability, security, maintainability, portability). Ask about interfaces (Web/Mobile/
-Desktop/TUI/CLI/none), stakeholders, constraints (budget, stack, compliance), and what is
-explicitly OUT of scope.
+## Clarify, don't grill
+
+Only *decisions* go to the user; *facts* are looked up (codebase, vault, web). For each
+decision surfaced: **lead with a recommendation**, state the assumption behind it, list the
+alternatives, and accept any free-text answer. If something is only mildly uncertain and the
+mode allows, assume the sensible default and note it rather than asking.
+
+**The question queue** — `30 Plans/<P>/question-queue.md` (machine lane) — keeps a long
+conversation honest across sessions and compaction:
+
+- Every item gets an ID + status: `OPEN / ASKED / ANSWERED / ASSUMED / PARTIAL / PARKED`.
+- An answer that resolves other items: cross-mark them with the answer's ID.
+- The user changes topic or adds a requirement mid-stream: APPEND a new branch; the main track
+  is never dropped. Return to open items before the phase can complete.
+- Re-read the queue on resume — it, not the transcript, is the memory.
+
+Probe the quality dimensions explicitly, even unprompted (offer defaults so this stays light):
+performance, security, usability, reliability (ISO 25010: functional suitability, performance
+efficiency, compatibility, usability, reliability, security, maintainability, portability). Ask
+about interfaces (Web/Mobile/Desktop/TUI/CLI/none), stakeholders, constraints (budget, stack,
+compliance), and what is explicitly OUT of scope.
 
 ## Brownfield mode (existing code)
 
@@ -51,8 +69,18 @@ testable criterion, edge cases considered.
 
 ## Validation gate (ends the phase)
 
-Walk the user through the SRS; on approval flip `status: draft → validated`. Then ask the
-**mode question**: gated (user verifies each milestone) or auto (sweeps self-verify, no
+Don't make the user read the whole SRS to approve it. First present a **review summary** they
+can skim in a minute, then point them at the full doc for anything they want to drill into:
+
+- **What we're building** — one plain-language paragraph.
+- **Features** — each FR as one line: `FR-07 — resume any project from cold state (Must)`.
+- **Key decisions** — the choices that shape the build (stack, interfaces, scope boundaries).
+- **Assumptions I made for you** — every `ASSUMED` item, so a wrong guess is easy to catch.
+- **Explicitly out of scope** — so silence isn't mistaken for agreement.
+- **Open questions** — anything still `OPEN/PARKED`.
+
+Invite a quick "OK" or targeted changes. On approval, flip `status: draft → validated`. Then
+ask the **mode question**: gated (user verifies each milestone) or auto (sweeps self-verify, no
 stops) — record in flow-state along with `phase: design`.
 
 ## Changes after validation (requirements management)

@@ -18,8 +18,9 @@ nothing is "done" until it fulfills its requirement with tests (C5/C6).
 
 **Planning step (lead agent, strong model):** reads design doc → emits tickets
 (`30 Plans/<P>/tickets/`, machine-lane): FR-ID trace, description, `requires:` edges,
-suggested model tier, DoD checklist. Asks the user once: parallelism appetite (default ON)
-and test-environment availability (browser for UI tests?).
+suggested model `tier` (size) and `kind` (design/planning/coding/review/docs — lets FR-24
+route the strongest model for the work), DoD checklist. Asks the user once: parallelism
+appetite (default ON) and test-environment availability (browser for UI tests?).
 
 **Worker loop (any agent):** claim next unblocked ticket (FR-05) → implement →
 **Definition of Done**: requirement's acceptance criteria demonstrably met; unit tests per

@@ -19,7 +19,14 @@ Subcommands
   register  [--path P] [--name N] [--isolated] [--import-claude] [--repair]
   claim     <TICKET-ID> --project P [--agent A] [--break-stale]
   release   <TICKET-ID> --project P [--done]
+  plan-continue set|show|clear --project P [--resume-at ISO] [--scope S]
+                                                       usage-limit continuation record
+  board     --project P [--verbose] [--watch N]        cross-platform swarm view
+  checkpoint --project P [--did ..] [--next ..]        safe-state note before compaction
   doctor                                               self-check: config, vault, adapters
+
+Optional orchestration (FR-22/FR-24, disabled by default): signal / inbox / control /
+orchestrate / supervisor / board — see the swarm-orchestrate skill.
 
 Resolution (FR-02): vault path = $SWARMVAULT_HOME, else ~/.swarmvault.json {"vault": ...}.
 Project identity = nearest `.swarmvault` marker walking up from cwd, else deepest
@@ -39,6 +46,7 @@ import json
 import math
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -498,6 +506,12 @@ def build_context(vault: Path, project: str, notes: list[dict]) -> str:
         phase = flow[0]["fm"].get("phase") or flow[0]["desc"]
         if phase:
             b += [f"**Current phase:** {phase}", ""]
+    cont = read_continuation(vault, project)
+    if cont:
+        b += [f"**⏳ Scheduled continuation:** resume at {cont.get('resume_at', '?')} "
+              f"(scope: {cont.get('scope', 'until-finish')}) — {cont.get('reason', '')}. "
+              f"If now is past that time, continue the work; if the project is finished, "
+              f"clear it (`plan-continue clear --project {project}`).", ""]
     if digest:
         b += [f"**Architecture digest:** `{digest[0]['rel']}` — {digest[0]['desc']}", ""]
     if mem:
@@ -1066,10 +1080,15 @@ def _event(root: Path, agent: str, event: str, **extra) -> Path:
 
 
 def _latest_agents(root: Path) -> dict:
+    """Latest *work* status per agent. Budget reports are platform telemetry
+    (tracked by _latest_budgets), not a change in what an agent is doing, so they
+    never overwrite a worker's real work state."""
     latest = {}
     for path in (root / "signals").glob("*/*.json") if (root / "signals").exists() else []:
         data = _json_read(path, {})
         agent = data.get("agent")
+        if data.get("event") == "budget":
+            continue
         if agent and (agent not in latest or path.name > latest[agent][0].name):
             latest[agent] = (path, data)
     return {agent: data for agent, (_, data) in latest.items()}
@@ -1139,8 +1158,70 @@ def _write_status(root: Path, project: str, leader: str, agents: dict, stale: li
     return state
 
 
-def _launch_worker(vault: Path, project: str, root: Path, platform: str, ticket: str, fm: dict, cfg: dict) -> str | None:
-    """Launch one explicitly configured headless CLI worker without a shell."""
+# Launch adapters. A declarative registry: each entry builds the argv for a
+# headless, non-interactive worker. `claude-code` and `codex` are verified; the
+# rest are best-effort defaults for fast-moving CLIs — confirm the flags against
+# your installed version, or override per project with `configure --launch-cmd`.
+# Read-only headless launch is offered ONLY where a real read/plan mode is known,
+# so a read-only request can never accidentally start a writing agent; every other
+# adapter launches only with explicit --allow-write. A brand-new or unlisted agent
+# is wired with a `launch_cmd` template. Tokens: {cwd} {model} {prompt}. Unknown
+# platform under the requested mode -> the supervisor records a manual action
+# instead of guessing.
+ADAPTERS: dict[str, dict] = {
+    "claude-code": {"bin": "claude", "verified": True,
+        "args": ["-p", "--output-format", "json"], "model": ["--model", "{model}"],
+        "write": ["--permission-mode", "acceptEdits"], "read": ["--permission-mode", "plan"],
+        "prompt": ["{prompt}"]},
+    "codex": {"bin": "codex", "verified": True,
+        "args": ["exec", "-C", "{cwd}"], "model": ["-m", "{model}"],
+        "write": ["-s", "workspace-write", "-a", "never"],
+        "read": ["-s", "read-only", "-a", "never"], "prompt": ["{prompt}"]},
+    # Best-effort — verify flags for your installed version, or set --launch-cmd:
+    "gemini": {"bin": "gemini", "verified": False,
+        "args": [], "model": ["-m", "{model}"], "write": ["--yolo"], "prompt": ["-p", "{prompt}"]},
+    "opencode": {"bin": "opencode", "verified": False,
+        "args": ["run"], "model": ["-m", "{model}"], "write": [], "prompt": ["{prompt}"]},
+    "droid": {"bin": "droid", "verified": False,
+        "args": ["exec"], "write": [], "prompt": ["{prompt}"]},
+    "cursor": {"bin": "cursor-agent", "verified": False,
+        "args": ["-p"], "model": ["-m", "{model}"], "write": ["--force"], "prompt": ["{prompt}"]},
+    "copilot": {"bin": "copilot", "verified": False,
+        "args": [], "model": ["--model", "{model}"], "write": ["--allow-all-tools"],
+        "prompt": ["-p", "{prompt}"]},
+}
+
+
+def _subst(tokens: list[str], mapping: dict) -> list[str]:
+    return [mapping.get(t[1:-1], t) if t[:1] == "{" and t[-1:] == "}" else t for t in tokens]
+
+
+def build_launch_argv(platform: str, adapter: dict, cwd: str, prompt: str,
+                      model: str | None, allow_write: bool) -> list[str] | None:
+    """Argv to spawn a headless worker, or None if this platform can't be launched
+    under the requested write mode (the caller then records a manual action)."""
+    mapping = {"cwd": cwd, "model": model or "", "prompt": prompt}
+    override = adapter.get("launch_cmd")
+    if override:  # the user vouches for their own template; it can wire ANY agent
+        return [a for a in _subst(shlex.split(override), mapping) if a != ""]
+    spec = ADAPTERS.get(platform)
+    if not spec:
+        return None
+    mode = spec.get("write") if allow_write else spec.get("read")
+    if mode is None:  # requested mode unsupported for this adapter -> manual
+        return None
+    argv = [spec["bin"], *_subst(spec.get("args", []), mapping)]
+    if model and spec.get("model"):
+        argv += _subst(spec["model"], mapping)
+    argv += _subst(mode, mapping)
+    argv += _subst(spec.get("prompt", ["{prompt}"]), mapping)
+    return argv
+
+
+def _launch_worker(vault: Path, project: str, root: Path, platform: str, ticket: str, fm: dict,
+                   cfg: dict, model: str | None = None) -> str | None:
+    """Launch one explicitly configured headless CLI worker without a shell.
+    `model` overrides the adapter default (the scheduler passes a kind-matched one)."""
     adapter = (cfg.get("adapters") or {}).get(platform, {})
     if not adapter.get("enabled"):
         return None
@@ -1154,25 +1235,116 @@ def _launch_worker(vault: Path, project: str, root: Path, platform: str, ticket:
               f"Claim it with: python3 {script} claim {ticket} --project {project} --agent {worker}. "
               "Read the ticket context, implement and test its DoD. Signal progress at meaningful checkpoints; "
               "on completion release with --done and signal done; on a real blocker signal blocked with a reason.")
-    model = adapter.get("model")
+    model = model or adapter.get("model")
     allow_write = bool(adapter.get("allow_write"))
-    if platform == "codex":
-        command = ["codex", "exec", "-C", str(entry["path"])]
-        if model: command += ["-m", str(model)]
-        command += ["-s", "workspace-write" if allow_write else "read-only", "-a", "never", prompt]
-    elif platform == "claude-code":
-        command = ["claude", "-p", "--output-format", "json", "--permission-mode", "acceptEdits" if allow_write else "plan"]
-        if model: command += ["--model", str(model)]
-        command += [prompt]
-    else:
+    command = build_launch_argv(platform, adapter, str(entry["path"]), prompt, model, allow_write)
+    if command is None:
+        _event(root, f"{platform}-manual", "blocked", platform=platform, ticket=ticket,
+               reason=(f"no launch adapter for '{platform}' under "
+                       f"{'write' if allow_write else 'read-only'} mode; start it manually or set "
+                       "launch_cmd via `supervisor configure --launch-cmd`"))
         return None
     log = (root / "logs" / f"{worker}.log"); log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a", encoding="utf-8") as fh:
         proc = subprocess.Popen(command, cwd=str(entry["path"]), stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
     _json_write(root / "processes" / f"{worker}.json", {"agent": worker, "platform": platform, "ticket": ticket,
-                "pid": proc.pid, "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "log": str(log)})
+                "pid": proc.pid, "model": model or "", "tier": fm.get("tier", "mid"),
+                "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "log": str(log), "prompt": prompt})
     _event(root, worker, "registered", platform=platform, ticket=ticket, tier=fm.get("tier", "mid"), model=model or "")
     return worker
+
+
+# Smart assignment (FR-24): match runnable tickets to (platform, model) by task
+# size, per-platform remaining usage budget, and per-kind model strength. Pure and
+# testable; the judgment (which model is strong at what) lives in config + the
+# model-routing reference, not hardcoded here.
+_SIZE_RANK = {"top": 3, "mid": 2, "small": 1}
+TASK_KINDS = ("design", "planning", "coding", "review", "docs")
+
+
+def _budget_bucket(frac: float | None) -> str:
+    if frac is None: return "unknown"
+    if frac <= 0.02: return "empty"
+    if frac >= 0.5: return "high"
+    if frac >= 0.2: return "medium"
+    return "low"
+
+
+def _budget_frac(budgets: dict, platform: str, default: float | None = None) -> float | None:
+    f = (budgets.get(platform) or {}).get("fraction")
+    return default if f is None else f
+
+
+def _model_for(adapter: dict, kind: str, tier: str) -> str:
+    """Strongest configured model for this task kind: explicit per-kind map wins,
+    then per-tier, then the platform's default model."""
+    models = adapter.get("models") or {}
+    return models.get(kind) or models.get(tier) or adapter.get("model") or ""
+
+
+def _latest_budgets(root: Path) -> dict:
+    """Latest reported remaining-usage budget per platform (from `budget` or
+    `quota-wait` signals). Unreported platforms are simply unknown, never assumed."""
+    latest: dict[str, tuple[str, dict]] = {}
+    paths = (root / "signals").glob("*/*.json") if (root / "signals").exists() else []
+    for path in paths:
+        d = _json_read(path, {})
+        plat = d.get("platform")
+        if not plat or ("budget" not in d and d.get("event") != "quota-wait"):
+            continue
+        if plat not in latest or path.name > latest[plat][0]:
+            latest[plat] = (path.name, d)
+    out = {}
+    for plat, (_, d) in latest.items():
+        frac = d.get("budget")
+        if frac is None and d.get("event") == "quota-wait":
+            frac = 0.0
+        out[plat] = {"fraction": frac, "reset": d.get("retry_at"), "at": d.get("at"),
+                     "used": d.get("used"), "limit": d.get("limit"), "unit": d.get("unit"),
+                     "weekly": d.get("weekly"), "weekly_reset": d.get("weekly_reset")}
+    return out
+
+
+def plan_assignments(tickets: list[dict], adapters: dict, budgets: dict,
+                     running_by: dict) -> tuple[list[dict], list[dict]]:
+    """Biggest tasks first, to the platform with the MOST remaining budget; small
+    tasks to the LEAST (preserve headroom for big work); empty/quota platforms are
+    skipped; the model is the strongest configured for the task kind. Applies to a
+    single platform too — it just picks the right model per task and stops when its
+    budget is empty. Returns (assignments, deferred)."""
+    caps = {p: int(a.get("max_workers", 0)) - int(running_by.get(p, 0))
+            for p, a in adapters.items() if a.get("enabled")}
+    plan, deferred = [], []
+
+    def fits(p, kind):  # platform has a model explicitly configured for this kind
+        return 1 if (adapters[p].get("models") or {}).get(kind) else 0
+
+    for tk in sorted(tickets, key=lambda t: (-_SIZE_RANK.get(t.get("tier", "mid"), 2), t.get("id", ""))):
+        tier = tk.get("tier", "mid")
+        kind = tk.get("kind") or "coding"
+        big = _SIZE_RANK.get(tier, 2) >= 2
+        usable = [p for p, c in caps.items()
+                  if c > 0 and _budget_bucket(_budget_frac(budgets, p)) != "empty"]
+        if not usable:
+            deferred.append({"ticket": tk.get("id"), "reason": "no platform with capacity and budget"})
+            continue
+        if big:
+            # capability first (right model for the kind), then most remaining budget
+            usable.sort(key=lambda p: (fits(p, kind), _budget_frac(budgets, p, default=0.4), p), reverse=True)
+        else:
+            # small work → least budget (reserve high-budget platforms for big tasks)
+            usable.sort(key=lambda p: (_budget_frac(budgets, p, default=0.4), -fits(p, kind), p))
+        plat = usable[0]
+        bucket = _budget_bucket(_budget_frac(budgets, plat))
+        why = ("capability+budget" if big and fits(plat, kind) else
+               "budget headroom" if big else "reserved for small work")
+        plan.append({"ticket": tk.get("id"), "platform": plat,
+                     "model": _model_for(adapters[plat], kind, tier), "kind": kind,
+                     "size": tier, "budget": bucket,
+                     "reason": f"{'large' if big else 'small'} {kind} task → {plat} ({why}, budget {bucket})"})
+        caps[plat] -= 1
+    return plan, deferred
 
 
 def reconcile(vault: Path, project: str, agent: str) -> tuple[int, dict]:
@@ -1210,19 +1382,24 @@ def reconcile(vault: Path, project: str, agent: str) -> tuple[int, dict]:
                    "issued_by": agent, "issued_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         _json_write(root / "control" / worker / f"{time.time_ns()}-{ticket}.json", control)
         queued.append({"agent": worker, **control})
-    # No registered idle worker? Launch only adapters the user explicitly enabled.
+    # No registered idle worker? Launch enabled adapters, but choose platform+model
+    # smartly: biggest tasks to the most-budget platform, model matched to task kind.
     if cfg.get("enabled") and not idle:
-        running = len(list((root / "processes").glob("*.json"))) if (root / "processes").exists() else 0
-        for ticket, fm in _open_tickets(vault, project):
-            if (tickets_dir(vault, project) / f"{ticket}.claim").exists(): continue
-            for platform in ("codex", "claude-code"):
-                adapter = (cfg.get("adapters") or {}).get(platform, {})
-                if adapter.get("enabled") and running < int(adapter.get("max_workers", 0)):
-                    worker = _launch_worker(vault, project, root, platform, ticket, fm, cfg)
-                    if worker:
-                        queued.append({"agent": worker, "action": "launch", "ticket": ticket, "platform": platform})
-                        running += 1
-                    break
+        procs = ([_json_read(p, {}) for p in (root / "processes").glob("*.json")]
+                 if (root / "processes").exists() else [])
+        running_by = Counter(p.get("platform") for p in procs)
+        adapters = {k: v for k, v in (cfg.get("adapters") or {}).items() if v.get("enabled")}
+        budgets = _latest_budgets(root)
+        open_tks = [{"id": t, "tier": fm.get("tier", "mid"), "kind": fm.get("kind")}
+                    for t, fm in _open_tickets(vault, project)
+                    if not (tickets_dir(vault, project) / f"{t}.claim").exists()]
+        assignments, _deferred = plan_assignments(open_tks, adapters, budgets, running_by)
+        for a in assignments:
+            worker = _launch_worker(vault, project, root, a["platform"], a["ticket"],
+                                    {"tier": a["size"], "kind": a["kind"]}, cfg, model=a["model"])
+            if worker:
+                queued.append({"agent": worker, "action": "launch", "ticket": a["ticket"],
+                               "platform": a["platform"], "model": a["model"], "reason": a["reason"]})
     return 0, _write_status(root, project, agent, active, stale, queued)
 
 
@@ -1230,6 +1407,12 @@ def cmd_signal(args) -> int:
     root = orchestration_dir(require_vault(), args.project); root.mkdir(parents=True, exist_ok=True)
     extra = {k: v for k, v in {"platform": args.platform, "ticket": args.ticket, "tier": args.tier,
              "model": args.model, "reason": args.reason, "retry_at": args.retry_at}.items() if v}
+    if args.budget is not None:  # 0.0 is meaningful (empty), so don't drop it by falsiness
+        extra["budget"] = args.budget
+    for k in ("used", "limit", "unit", "weekly", "weekly_reset"):
+        v = getattr(args, k, None)
+        if v is not None:
+            extra[k] = v
     print(_event(root, args.agent, args.event, **extra))
     return 0
 
@@ -1270,14 +1453,30 @@ def cmd_supervisor(args) -> int:
         cfg["enabled"] = True; _json_write(root / "config.json", cfg); print("supervisor enabled (not started)"); return 0
     if args.action == "configure":
         if not args.platform:
-            print("error: configure requires --platform codex|claude-code"); return 1
+            print("error: configure requires --platform <name> (e.g. claude-code, codex, gemini, …)"); return 1
         if args.max_workers < 1:
             print("error: --max-workers must be at least 1"); return 1
         adapters = cfg.setdefault("adapters", {})
-        adapters[args.platform] = {"enabled": True, "max_workers": args.max_workers,
-                                   "model": args.model or "", "allow_write": bool(args.allow_write)}
+        entry = {"enabled": True, "max_workers": args.max_workers,
+                 "model": args.model or "", "allow_write": bool(args.allow_write)}
+        if args.launch_cmd:
+            entry["launch_cmd"] = args.launch_cmd
+        if args.models:  # per-kind model strengths, e.g. "design=A,coding=B,planning=C"
+            entry["models"] = {k.strip(): v.strip()
+                               for k, v in (kv.split("=", 1) for kv in args.models.split(",") if "=" in kv)}
+        adapters[args.platform] = entry
         _json_write(root / "config.json", cfg)
-        print(f"configured {args.platform}: max_workers={args.max_workers}, allow_write={bool(args.allow_write)}")
+        spec = ADAPTERS.get(args.platform)
+        if args.launch_cmd:
+            note = "custom launch_cmd"
+        elif spec and spec.get("verified"):
+            note = "verified adapter"
+        elif spec:
+            note = "best-effort adapter — verify flags or set --launch-cmd"
+        else:
+            note = "no built-in adapter — set --launch-cmd or run this platform manually"
+        print(f"configured {args.platform}: max_workers={args.max_workers}, "
+              f"allow_write={bool(args.allow_write)} ({note})")
         return 0
     if args.action == "disable":
         cfg["enabled"] = False; _json_write(root / "config.json", cfg); print("supervisor disabled"); return 0
@@ -1307,6 +1506,258 @@ def cmd_supervisor(args) -> int:
     while True:
         reconcile(vault, args.project, f"supervisor-{os.getpid()}")
         time.sleep(max(5, int(_orchestration_config(root).get("interval_seconds", 60))))
+
+
+# ---------------------------------------------------------------------------
+# Orchestration board (FR-24): a cross-platform, single-CLI view of the swarm.
+# Every agent — any platform — shows as "platform · model · effort · task · latest
+# progress", with ticket and budget bars. It reads only shared vault files, so a
+# Claude Code session sees the Codex workers and vice versa. `--watch` redraws for
+# a real terminal; a chat-style CLI just re-runs it to refresh.
+# ---------------------------------------------------------------------------
+def _bar(frac: float | None, width: int = 10) -> str:
+    f = 0.0 if frac is None else max(0.0, min(1.0, frac))
+    fill = int(round(f * width))
+    return "█" * fill + "░" * (width - fill)
+
+
+def _age_str(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    try:
+        secs = int(max(0, time.time() - datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()))
+    except (ValueError, AttributeError):
+        return "—"
+    if secs < 90: return f"{secs}s ago"
+    if secs < 5400: return f"{secs // 60}m ago"
+    return f"{secs // 3600}h ago"
+
+
+def _until_str(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    try:
+        secs = int(datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp() - time.time())
+    except (ValueError, AttributeError):
+        return "—"
+    if secs <= 0: return "now"
+    if secs < 5400: return f"in {max(1, secs // 60)}m"
+    if secs < 172800: return f"in {secs // 3600}h"
+    return f"in {secs // 86400}d"
+
+
+def _num(n) -> str:
+    """Compact number: 38000 -> 38k, 1500000 -> 1.5M."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+    for suffix, div in (("M", 1e6), ("k", 1e3)):
+        if abs(n) >= div:
+            return f"{n / div:.1f}{suffix}".replace(".0" + suffix, suffix)
+    return str(int(n)) if n == int(n) else f"{n:.1f}"
+
+
+def _ticket_stats(vault: Path, project: str) -> Counter:
+    counts: Counter = Counter()
+    tdir = tickets_dir(vault, project)
+    for p in tdir.glob("*.md") if tdir.exists() else []:
+        fm, _ = split_frontmatter(p.read_text(encoding="utf-8", errors="replace"))
+        counts[fm.get("status", "open")] += 1
+    return counts
+
+
+_LIVE_EVENTS = {"registered", "heartbeat", "progress"}
+
+
+def _render_board(vault: Path, project: str, verbose: bool = False) -> str:
+    root = orchestration_dir(vault, project)
+    cfg = _json_read(root / "config.json", {})
+    lease = _json_read(root / "leader.lease", {})
+    agents = _latest_agents(root)
+    budgets = _latest_budgets(root)
+    procs = ({pp.stem: _json_read(pp, {}) for pp in (root / "processes").glob("*.json")}
+             if (root / "processes").exists() else {})
+    tk = _ticket_stats(vault, project); total = sum(tk.values()); done = tk.get("done", 0)
+
+    out = [f"SwarmVault orchestration — {project}",
+           f"  leader: {lease.get('agent', '—')}   supervisor: "
+           f"{'enabled' if cfg.get('enabled') else 'disabled'}   updated {_age_str(lease.get('updated_at'))}"]
+    if total:
+        out.append(f"  tickets  [{_bar(done / total)}] {done}/{total} done · {tk.get('open', 0)} open · "
+                   f"{tk.get('claimed', 0)} claimed · {tk.get('blocked', 0)} blocked")
+    if budgets:
+        out.append("  usage / limits")
+        for p, b in sorted(budgets.items()):
+            frac = b.get("fraction")
+            line = f"    {p:12} [{_bar(frac)}] " + (f"{frac * 100:.0f}% left" if frac is not None else "?")
+            if b.get("used") is not None and b.get("limit"):
+                line += f" · {_num(b['used'])}/{_num(b['limit'])} {b.get('unit') or 'tokens'}"
+            if b.get("reset"):
+                line += f" · resets {_until_str(b['reset'])}"
+            if b.get("weekly") is not None:
+                w = b["weekly"]
+                line += (f" · weekly [{_bar(w)}] {w * 100:.0f}%"
+                         + (" ⚠ near weekly limit" if w <= 0.15 else ""))
+                if b.get("weekly_reset"):
+                    line += f" (resets {_until_str(b['weekly_reset'])})"
+            out.append(line)
+    out.append("  workers")
+    if not agents:
+        out.append("    (none registered)")
+    for name, d in sorted(agents.items()):
+        proc = procs.get(name, {})
+        ev = d.get("event", "?")
+        dot = "●" if ev in _LIVE_EVENTS else "○"
+        plat = d.get("platform") or proc.get("platform") or "?"
+        model = d.get("model") or proc.get("model") or "—"
+        tier = d.get("tier") or proc.get("tier") or "—"
+        ticket = d.get("ticket") or proc.get("ticket") or "—"
+        tail = f" — {ev} {_age_str(d.get('at'))}" + (f": {d['reason']}" if d.get("reason") else "")
+        out.append(f"    {dot} {name:16} {plat:12} · {model:12} · {tier:5} · {ticket}{tail}")
+        if verbose:
+            if proc.get("prompt"):
+                out.append(f"        prompt: {proc['prompt'][:200]}")
+            log = proc.get("log")
+            if log and Path(log).exists():
+                for ln in Path(log).read_text(encoding="utf-8", errors="replace").splitlines()[-3:]:
+                    out.append(f"        · {ln[:160]}")
+    changes = []
+    for pth in (sorted((root / "signals").glob("*/*.json"), reverse=True)
+                if (root / "signals").exists() else []):
+        d = _json_read(pth, {})
+        if d.get("event") in {"progress", "done"} and d.get("reason"):
+            changes.append(f"    {d.get('ticket') or '—'}: {d['reason']} "
+                           f"({d.get('agent')}, {_age_str(d.get('at'))})")
+        if len(changes) >= 5:
+            break
+    if changes:
+        out.append("  recent changes")
+        out.extend(changes)
+    return "\n".join(out) + "\n"
+
+
+def cmd_board(args) -> int:
+    vault = require_vault()
+    project = args.project or (resolve_project(vault, os.getcwd()) or {}).get("name")
+    if not project:
+        print("error: not a registered project; pass --project"); return 1
+    if args.watch:
+        try:
+            while True:
+                sys.stdout.write("\033[2J\033[H" + _render_board(vault, project, args.verbose))
+                sys.stdout.flush()
+                time.sleep(max(1, args.watch))
+        except KeyboardInterrupt:
+            return 0
+    print(_render_board(vault, project, args.verbose), end="")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Usage-limit continuation (FR-23). A durable record that a session approaching
+# its provider usage limit has scheduled a "continue project X" wake for after
+# the limit resets. It is scheduler-agnostic: the agent creates the actual wake
+# with its platform's native scheduler (Claude Code scheduled task, cron, …) and
+# mirrors the intent here so ANY later session sees it (it surfaces in context)
+# and can cancel it. It self-clears when the project is finished. Works with or
+# without the optional supervisor.
+# ---------------------------------------------------------------------------
+def continuation_path(vault: Path, project: str) -> Path:
+    return vault / PLANS / project / "continuation.json"
+
+
+def read_continuation(vault: Path, project: str) -> dict:
+    """The active (still-scheduled) continuation for a project, else {}."""
+    data = _json_read(continuation_path(vault, project), {})
+    return data if data.get("status") == "scheduled" else {}
+
+
+def _write_continuation_md(vault: Path, project: str, rec: dict) -> None:
+    """Human/Obsidian/query-visible mirror of the machine record."""
+    dest = vault / PLANS / project / "continuation.md"
+    platforms = ", ".join(rec.get("platforms") or []) or "any configured agent"
+    body = [
+        "---", "name: continuation",
+        f'description: "scheduled continuation — resume {rec.get("resume_at", "?")} '
+        f'(scope: {rec.get("scope", "until-finish")})"',
+        f"project: {project}", "type: plan", f"status: {rec.get('status', 'scheduled')}", "---", "",
+        f"# Scheduled continuation — {project}", "",
+        f"- **Resume at:** {rec.get('resume_at', '?')} (when the provider usage limit resets)",
+        f"- **Scope:** {rec.get('scope', 'until-finish')}",
+        f"- **Platforms:** {platforms}",
+        f"- **Prompt to fire:** {rec.get('prompt') or ('continue project ' + project)}",
+        f"- **Reason:** {rec.get('reason', '')}",
+        f"- **Set by:** {rec.get('created_by', '')} at {rec.get('created_at', '')}", "",
+        "A session approaching its provider usage limit scheduled this wake, with the user's "
+        "consent, so work resumes automatically after the limit resets. The vault holds all "
+        "state, so the resumed session rebuilds context from memory/tickets/flow-state alone. "
+        "It self-clears when the project is finished (`plan-continue clear`).",
+    ]
+    atomic_write(dest, "\n".join(body) + "\n")
+
+
+def cmd_plan_continue(args) -> int:
+    vault = require_vault()
+    pdir = vault / PLANS / args.project
+    path = continuation_path(vault, args.project)
+    if args.action == "show":
+        print(json.dumps(_json_read(path, {}), indent=2))
+        return 0
+    if args.action == "clear":
+        existed = path.exists()
+        for p in (path, pdir / "continuation.md"):
+            try: p.unlink()
+            except OSError: pass
+        print("continuation cleared" if existed else "no continuation scheduled")
+        return 0
+    # set
+    if not args.resume_at:
+        print("error: set requires --resume-at <ISO-8601> (the provider usage-limit reset time)")
+        return 1
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    prior = _json_read(path, {})
+    rec = {
+        "project": args.project, "status": "scheduled",
+        "scope": args.scope or "until-finish", "resume_at": args.resume_at,
+        "platforms": [p.strip() for p in (args.platforms or "").split(",") if p.strip()],
+        "prompt": args.prompt or f"continue project {args.project}",
+        "reason": args.reason or "provider usage limit approaching; scheduled continuation",
+        "created_by": args.by or os.environ.get("SWARMVAULT_AGENT", f"agent-{os.getpid()}"),
+        "created_at": prior.get("created_at", now), "updated_at": now,
+    }
+    _json_write(path, rec)
+    _write_continuation_md(vault, args.project, rec)
+    print(f"continuation scheduled: resume {rec['resume_at']} (scope: {rec['scope']})")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Safe-state checkpoint (FR-21 token economy). Records a compact session note at a
+# resumable point so the main agent can compact/clear its context to save tokens
+# and continue — the vault holds the state (J1). Quality-bounded: the *skill*
+# decides WHEN it is safe; this just writes the record and prints the resume line.
+# ---------------------------------------------------------------------------
+def cmd_checkpoint(args) -> int:
+    vault = require_vault()
+    project = args.project or (resolve_project(vault, os.getcwd()) or {}).get("name")
+    if not project:
+        print("error: not a registered project; pass --project"); return 1
+    now = datetime.now(timezone.utc); date = now.date().isoformat()
+    slug = args.slug or f"{now.strftime('%H%M%S')}-checkpoint"
+    agent = args.agent or os.environ.get("SWARMVAULT_AGENT", f"agent-{os.getpid()}")
+    fm = {"name": f"{date}-{slug}", "description": (args.did or "safe-state checkpoint")[:120],
+          "project": project, "type": "session", "date": date, "agent": agent,
+          "safe_state": True, "tags": ["swarm/session"]}
+    body = [f"DID: {args.did or '—'}", f"NEXT: {args.next or '—'}"]
+    if args.blocked:
+        body.append(f"BLOCKED: {args.blocked}")
+    dest = vault / SESSIONS / project / f"{date}-{slug}.md"
+    atomic_write(dest, render(fm, "\n".join(body) + "\n"))
+    print(f"checkpoint saved: {dest.relative_to(vault)}")
+    print(f"safe to compact/clear — resume with: continue project {project}"
+          f"  (NEXT: {args.next or 'see flow-state'})")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -1355,6 +1806,7 @@ status: open
 fr: FR-00
 requires: []
 tier: mid
+kind: coding
 ---
 
 DO: implement X per [[fr-00-feature-slug]] acceptance criteria.
@@ -1581,9 +2033,15 @@ def main(argv: list[str] | None = None) -> int:
 
     sg = sub.add_parser("signal", help="write a durable worker signal for the optional supervisor")
     sg.add_argument("--project", required=True); sg.add_argument("--agent", required=True)
-    sg.add_argument("--event", required=True, choices=["registered", "heartbeat", "progress", "done", "blocked", "quota-wait", "stopped"])
+    sg.add_argument("--event", required=True, choices=["registered", "heartbeat", "progress", "done", "blocked", "quota-wait", "stopped", "budget"])
     sg.add_argument("--platform"); sg.add_argument("--ticket"); sg.add_argument("--tier")
     sg.add_argument("--model"); sg.add_argument("--reason"); sg.add_argument("--retry-at")
+    sg.add_argument("--budget", type=float, help="remaining usage budget 0..1 for --event budget (0 = exhausted)")
+    sg.add_argument("--used", type=float, help="usage consumed so far, in --unit")
+    sg.add_argument("--limit", type=float, help="usage limit, in --unit")
+    sg.add_argument("--unit", help="unit for --used/--limit (default tokens)")
+    sg.add_argument("--weekly", type=float, help="remaining weekly budget 0..1, if the plan has a weekly cap")
+    sg.add_argument("--weekly-reset", help="ISO-8601 time the weekly limit resets")
     sg.set_defaults(fn=cmd_signal)
 
     ib = sub.add_parser("inbox", help="read or acknowledge durable supervisor requests")
@@ -1604,11 +2062,36 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("supervisor", help="manage the optional local orchestration process")
     sp.add_argument("action", choices=["enable", "disable", "configure", "start", "run", "stop", "status"])
     sp.add_argument("--project", required=True)
-    sp.add_argument("--platform", choices=["codex", "claude-code"])
+    sp.add_argument("--platform", help="agent platform to launch: claude-code, codex (verified), gemini/opencode/droid/cursor/copilot (best-effort), or any name with --launch-cmd")
     sp.add_argument("--max-workers", type=int, default=1)
     sp.add_argument("--model")
     sp.add_argument("--allow-write", action="store_true", help="allow launched workers to edit the registered project")
+    sp.add_argument("--launch-cmd", help="override the launch command template; tokens {cwd} {model} {prompt}")
+    sp.add_argument("--models", help="per-kind model strengths, e.g. 'design=A,planning=B,coding=C,review=D'")
     sp.set_defaults(fn=cmd_supervisor)
+
+    bd = sub.add_parser("board", help="render a cross-platform orchestration board (see every agent in the current CLI)")
+    bd.add_argument("--project")
+    bd.add_argument("--verbose", action="store_true", help="also show each worker's prompt and recent log lines")
+    bd.add_argument("--watch", type=int, default=0, help="redraw every N seconds (real terminal only)")
+    bd.set_defaults(fn=cmd_board)
+
+    ck = sub.add_parser("checkpoint", help="record a safe-state session note so you can compact/clear and resume")
+    ck.add_argument("--project"); ck.add_argument("--agent"); ck.add_argument("--slug")
+    ck.add_argument("--did", help="what was accomplished up to this safe point")
+    ck.add_argument("--next", help="the exact next step to resume with")
+    ck.add_argument("--blocked", help="anything blocking, if applicable")
+    ck.set_defaults(fn=cmd_checkpoint)
+
+    pc = sub.add_parser("plan-continue", help="record/show/clear a usage-limit continuation (resume after the provider limit resets)")
+    pc.add_argument("action", choices=["set", "show", "clear"])
+    pc.add_argument("--project", required=True)
+    pc.add_argument("--resume-at", help="ISO-8601 time the provider usage limit resets (when to resume)")
+    pc.add_argument("--scope", help="'until-finish' (default) or free text like 'until M3'")
+    pc.add_argument("--platforms", help="comma-separated platforms to resume, e.g. claude-code,codex")
+    pc.add_argument("--prompt", help="prompt to fire on resume (default: 'continue project P')")
+    pc.add_argument("--reason"); pc.add_argument("--by")
+    pc.set_defaults(fn=cmd_plan_continue)
 
     d = sub.add_parser("doctor", help="self-check the installation")
     d.set_defaults(fn=cmd_doctor)

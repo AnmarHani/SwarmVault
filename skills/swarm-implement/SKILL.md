@@ -14,8 +14,9 @@ you're a **worker**.
 
 1. Emit tickets to `30 Plans/<P>/tickets/TK-NNN-<slug>.md` (template:
    `90 Templates/ticket.md`, machine lane): FR-ID trace, `requires:` edges (tracer-bullet
-   order: thinnest end-to-end slice first), suggested `tier`, DoD checklist, and CONTEXT —
-   the exact notes/design sections a worker needs (nothing more).
+   order: thinnest end-to-end slice first), suggested `tier` (size) and `kind`
+   (`design`/`planning`/`coding`/`review`/`docs` — lets orchestration route the right model),
+   DoD checklist, and CONTEXT — the exact notes/design sections a worker needs (nothing more).
 2. Ask the user ONCE (skip in auto mode if already answered at SRS validation):
    parallelism appetite, and is a browser/test environment available for UI verification?
 3. Update flow-state (`phase: implement`, ticket count) — J1: state first, work second.
@@ -37,9 +38,18 @@ the wrong tier for a ticket should say so rather than proceed on hard tickets.
    - Unit tests per function: happy path + edge cases + exception paths.
    - UI work: verify in the real browser/app when the env allows (Playwright); else mark
      the ticket `needs-ui-verify` honestly.
-   - Simplify before done: if a block can be simpler or reuse an existing function, make
-     it so. Light comments/docstrings only — constraints the code can't show, not
-     narration.
+   - **Craft — write it for the next human** (a future teammate or agent):
+     - *Simple:* the least code that does the job; delete before you add; no speculative
+       generality.
+     - *Reusable:* search first — call an existing function instead of a near-duplicate;
+       factor a shared helper only once a second real caller exists (not preemptively).
+     - *Readable:* intention-revealing names, small single-purpose functions, early returns
+       over deep nesting, match the file's existing idiom and style.
+     - *Maintainable:* obvious data flow, no hidden globals/side effects, errors handled where
+       they happen.
+     - *Comment sparingly:* the code shows *what*; comments/docstrings only capture *why* —
+       a constraint, a tradeoff, a non-obvious edge — never narrate lines. Delete
+       commented-out code.
    - Deep reasoning that would bloat comments → code-note in
      `10 Projects/<P>/code-notes/` + one pointer line in the file header.
    - Commit: Conventional Commits with the FR in scope — `feat(FR-12): …`.

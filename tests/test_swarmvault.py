@@ -387,6 +387,15 @@ class TestOrchestration(Base):
         cfg = json.loads((self.vault / "30 Plans/P/orchestration/config.json").read_text())
         self.assertTrue(cfg["adapters"]["claude-code"]["allow_write"])
 
+    def test_fr22_configure_custom_platform_with_launch_cmd(self):
+        self.make_project("P")
+        code, out = self.run_cli("supervisor", "configure", "--project", "P", "--platform", "warp",
+                                 "--max-workers", "1", "--allow-write", "--launch-cmd", "warpcli {prompt}")
+        self.assertEqual(code, 0)
+        self.assertIn("custom launch_cmd", out)
+        cfg = json.loads((self.vault / "30 Plans/P/orchestration/config.json").read_text())
+        self.assertEqual(cfg["adapters"]["warp"]["launch_cmd"], "warpcli {prompt}")
+
     def test_fr22_signal_control_and_inbox_ack(self):
         self.make_project("P")
         code, _ = self.run_cli("signal", "--project", "P", "--agent", "codex-1",
@@ -402,6 +411,184 @@ class TestOrchestration(Base):
         self.assertEqual(code, 0)
         code, out = self.run_cli("inbox", "--project", "P", "--agent", "codex-1")
         self.assertEqual(json.loads(out), [])
+
+
+class TestLaunchAdapters(unittest.TestCase):
+    """FR-22: declarative, overridable launch registry (pure argv builder)."""
+
+    def test_verified_write_and_read_modes(self):
+        w = sv.build_launch_argv("codex", {}, "/repo", "PROMPT", "gpt-x", True)
+        self.assertEqual(w[0], "codex")
+        self.assertIn("workspace-write", w)
+        self.assertIn("PROMPT", w)
+        self.assertIn("gpt-x", w)
+        ro = sv.build_launch_argv("codex", {}, "/repo", "P", None, False)
+        self.assertIn("read-only", ro)
+        self.assertNotIn("-m", ro)  # no model given → model flag omitted
+        cc = sv.build_launch_argv("claude-code", {}, "/repo", "P", None, True)
+        self.assertEqual(cc[0], "claude")
+        self.assertIn("acceptEdits", cc)
+
+    def test_best_effort_is_write_only(self):
+        w = sv.build_launch_argv("gemini", {}, "/repo", "P", "g-1", True)
+        self.assertEqual(w[0], "gemini")
+        self.assertIn("--yolo", w)
+        # read-only unsupported for best-effort → None (never launch a writer as a reader)
+        self.assertIsNone(sv.build_launch_argv("gemini", {}, "/repo", "P", None, False))
+
+    def test_unknown_platform_is_none(self):
+        self.assertIsNone(sv.build_launch_argv("warp", {}, "/repo", "P", None, True))
+
+    def test_launch_cmd_override_wires_any_agent(self):
+        argv = sv.build_launch_argv(
+            "warp", {"launch_cmd": "mycli run --dir {cwd} -m {model} {prompt}"},
+            "/repo", "hello world", "m1", True)
+        self.assertEqual(argv, ["mycli", "run", "--dir", "/repo", "-m", "m1", "hello world"])
+
+    def test_launch_cmd_drops_empty_model(self):
+        argv = sv.build_launch_argv("x", {"launch_cmd": "cli {model} {prompt}"}, "/r", "P", None, True)
+        self.assertEqual(argv, ["cli", "P"])  # empty {model} token removed
+
+
+class TestScheduler(unittest.TestCase):
+    """FR-24: budget- and capability-aware assignment (pure)."""
+
+    def test_big_to_most_budget_small_to_least(self):
+        adapters = {"codex": {"enabled": True, "max_workers": 2, "model": "c"},
+                    "claude-code": {"enabled": True, "max_workers": 2, "model": "cc"}}
+        budgets = {"codex": {"fraction": 0.85}, "claude-code": {"fraction": 0.30}}
+        tickets = [{"id": "TK-A", "tier": "top", "kind": "coding"},
+                   {"id": "TK-B", "tier": "small", "kind": "docs"}]
+        plan, deferred = sv.plan_assignments(tickets, adapters, budgets, {})
+        by = {a["ticket"]: a["platform"] for a in plan}
+        self.assertEqual(by["TK-A"], "codex")          # big → most budget
+        self.assertEqual(by["TK-B"], "claude-code")    # small → least budget (reserve codex)
+        self.assertEqual(deferred, [])
+
+    def test_capability_beats_budget_for_big_task(self):
+        adapters = {"codex": {"enabled": True, "max_workers": 1, "model": "c", "models": {"coding": "c-code"}},
+                    "claude-code": {"enabled": True, "max_workers": 1, "model": "cc", "models": {"design": "cc-design"}}}
+        budgets = {"codex": {"fraction": 0.90}, "claude-code": {"fraction": 0.30}}
+        plan, _ = sv.plan_assignments([{"id": "TK-D", "tier": "top", "kind": "design"}], adapters, budgets, {})
+        self.assertEqual(plan[0]["platform"], "claude-code")  # has the design model despite less budget
+        self.assertEqual(plan[0]["model"], "cc-design")
+
+    def test_empty_budget_platform_skipped(self):
+        plan, deferred = sv.plan_assignments(
+            [{"id": "TK-1", "tier": "top", "kind": "coding"}],
+            {"codex": {"enabled": True, "max_workers": 1, "model": "c"}},
+            {"codex": {"fraction": 0.0}}, {})
+        self.assertEqual(plan, [])
+        self.assertEqual(deferred[0]["ticket"], "TK-1")
+
+    def test_capacity_respected(self):
+        adapters = {"codex": {"enabled": True, "max_workers": 1, "model": "c"}}
+        tickets = [{"id": "TK-1", "tier": "top"}, {"id": "TK-2", "tier": "top"}]
+        plan, deferred = sv.plan_assignments(tickets, adapters, {"codex": {"fraction": 0.9}}, {})
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(len(deferred), 1)
+
+    def test_self_orchestration_picks_per_kind_model(self):
+        adapters = {"claude-code": {"enabled": True, "max_workers": 1, "model": "cc",
+                                    "models": {"design": "cc-design"}}}
+        plan, _ = sv.plan_assignments([{"id": "TK-D", "tier": "top", "kind": "design"}], adapters, {}, {})
+        self.assertEqual(plan[0]["model"], "cc-design")
+
+
+class TestObservability(Base):
+    """FR-24: budget signals + cross-platform board; FR-21: safe-state checkpoint."""
+
+    def test_budget_signal_latest_wins_with_usage(self):
+        self.make_project("P")
+        self.run_cli("signal", "--project", "P", "--agent", "codex-1", "--event", "budget",
+                     "--platform", "codex", "--budget", "0.9")
+        self.run_cli("signal", "--project", "P", "--agent", "codex-1", "--event", "budget",
+                     "--platform", "codex", "--budget", "0.4", "--used", "36000", "--limit", "60000",
+                     "--unit", "tokens", "--weekly", "0.1")
+        root = self.vault / "30 Plans/P/orchestration"
+        budgets = sv._latest_budgets(root)
+        self.assertEqual(budgets["codex"]["fraction"], 0.4)  # latest, not 0.9
+        self.assertEqual(budgets["codex"]["limit"], 60000)
+        self.assertEqual(budgets["codex"]["weekly"], 0.1)
+
+    def test_board_shows_cross_platform_workers_and_limits(self):
+        self.make_project("P")
+        note(self.vault / "30 Plans/P/tickets/TK-001-x.md",
+             {"name": "TK-001-x", "project": "P", "type": "ticket", "status": "open", "tier": "top"})
+        self.run_cli("signal", "--project", "P", "--agent", "codex-1", "--event", "progress",
+                     "--platform", "codex", "--model", "gpt-x", "--tier", "top", "--ticket", "TK-001",
+                     "--reason", "auth wired")
+        self.run_cli("signal", "--project", "P", "--agent", "codex-1", "--event", "budget",
+                     "--platform", "codex", "--budget", "0.5", "--weekly", "0.1")
+        code, out = self.run_cli("board", "--project", "P")
+        self.assertEqual(code, 0)
+        self.assertIn("codex", out)
+        self.assertIn("gpt-x", out)           # model shown
+        self.assertIn("TK-001", out)          # task shown
+        self.assertIn("usage / limits", out)
+        self.assertIn("near weekly limit", out)
+        self.assertIn("auth wired", out)      # recent change / progress
+
+    def test_checkpoint_writes_safe_state_note(self):
+        self.make_project("P")
+        code, out = self.run_cli("checkpoint", "--project", "P", "--agent", "lead",
+                                 "--did", "planned M2", "--next", "review TK-003")
+        self.assertEqual(code, 0)
+        self.assertIn("continue project P", out)
+        notes = list((self.vault / "40 Sessions/P").glob("*.md"))
+        self.assertTrue(notes)
+        fm, body = sv.split_frontmatter(notes[0].read_text(encoding="utf-8"))
+        self.assertIs(fm.get("safe_state"), True)
+        self.assertIn("review TK-003", body)
+
+
+class TestContinuation(Base):
+    """FR-23: consent-gated usage-limit continuation record."""
+
+    def test_fr23_set_show_clear_roundtrip(self):
+        self.make_project("P")
+        code, _ = self.run_cli("plan-continue", "set", "--project", "P",
+                               "--resume-at", "2026-07-25T09:00:00Z", "--scope", "until-finish",
+                               "--platforms", "claude-code,codex", "--reason", "usage ~92%")
+        self.assertEqual(code, 0)
+        rec = json.loads((self.vault / "30 Plans/P/continuation.json").read_text())
+        self.assertEqual(rec["status"], "scheduled")
+        self.assertEqual(rec["resume_at"], "2026-07-25T09:00:00Z")
+        self.assertEqual(rec["platforms"], ["claude-code", "codex"])
+        self.assertTrue((self.vault / "30 Plans/P/continuation.md").exists())
+
+        code, out = self.run_cli("plan-continue", "show", "--project", "P")
+        self.assertEqual(json.loads(out)["scope"], "until-finish")
+
+        code, _ = self.run_cli("plan-continue", "clear", "--project", "P")
+        self.assertEqual(code, 0)
+        self.assertFalse((self.vault / "30 Plans/P/continuation.json").exists())
+        self.assertFalse((self.vault / "30 Plans/P/continuation.md").exists())
+        code, out = self.run_cli("plan-continue", "show", "--project", "P")
+        self.assertEqual(json.loads(out), {})
+
+    def test_fr23_set_requires_resume_at(self):
+        self.make_project("P")
+        code, _ = self.run_cli("plan-continue", "set", "--project", "P")
+        self.assertEqual(code, 1)
+
+    def test_fr23_clear_without_plan_is_idempotent(self):
+        self.make_project("P")
+        code, out = self.run_cli("plan-continue", "clear", "--project", "P")
+        self.assertEqual(code, 0)
+        self.assertIn("no continuation", out)
+
+    def test_fr23_scheduled_plan_surfaces_in_context(self):
+        p = self.make_project("P")
+        note(self.vault / "30 Plans/P/flow-state.md",
+             {"name": "flow-state", "description": "implement M2", "project": "P",
+              "type": "plan", "phase": "implement"})
+        self.run_cli("plan-continue", "set", "--project", "P",
+                     "--resume-at", "2026-07-25T09:00:00Z", "--reason", "usage ~92%")
+        code, out = self.run_cli("context", str(p))
+        self.assertEqual(code, 0)
+        self.assertIn("Scheduled continuation", out)
+        self.assertIn("2026-07-25T09:00:00Z", out)
 
 
 class TestContextAndHook(Base):
