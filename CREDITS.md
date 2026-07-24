@@ -34,13 +34,13 @@ learned from these authors' work. Thank you.
 ## Reference works
 
 ISO/IEC 25010 (quality characteristics) · EARS — Easy Approach to Requirements Syntax
-(Mavin et al.) · *Laws of UX* — Jon Yablonski ([lawsofux.com](https://lawsofux.com)) ·
-*Atomic Design* — Brad Frost · [NameThatUI](https://namethatui.com) — visual dictionary of
+· *Laws of UX* ([lawsofux.com](https://lawsofux.com)) ·
+*Atomic Design* · [NameThatUI](https://namethatui.com) — visual dictionary of
 UI component names · [checklist.design](https://www.checklist.design) — per-element/page UI
 checklists · [roadmap.sh/design-system](https://roadmap.sh/design-system) ·
-[refactoring.guru](https://refactoring.guru) design patterns · Michael Nygard's ADR
+[refactoring.guru](https://refactoring.guru) design patterns · ADR
 format · [Conventional Commits](https://www.conventionalcommits.org) ·
-workingsoftware.dev's NFR guide · Figma's typography guide · GeeksforGeeks SE articles.
+NFR guide · Figma's typography guide · GeeksforGeeks SE articles.
 
 ## Origin
 
