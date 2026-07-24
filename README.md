@@ -152,3 +152,4 @@ a security boundary.
 
 The skills were written fresh for SwarmVault, but the techniques stand on excellent
 prior work — see **[CREDITS.md](CREDITS.md)**. MIT — see [LICENSE](LICENSE).
+
